@@ -12,8 +12,6 @@ services:
   yolo3d:
     build: ./yolo
     container_name: yolo
-    depends_on:
-      - app
     restart: unless-stopped
     logging: *lokilogging
 
@@ -22,9 +20,6 @@ services:
     container_name: clip_zero
     environment:
       REDIS_URL: redis://redis:6379
-    depends_on:
-      - redis
-      - app
     restart: unless-stopped
     logging: *lokilogging
 
