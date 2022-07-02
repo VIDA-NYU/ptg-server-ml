@@ -50,37 +50,49 @@ class App:
                         await asyncio.sleep(0.1)
                         continue
                     data = ptgctl.holoframe.load_all(data)
-                    ts = ptgctl.util.parse_time(data['main']['timestamp'])
-                    print('timestamp difference:', {
-                        k: str(ts - ptgctl.util.parse_time(d['timestamp']))
-                        for k, d in data.items() if 'timestamp' in d
-                    })
+                    self.data.update(data)
 
-                    (
-                        rgb, depth,
-                        T_rig2world, T_pv2world, 
-                        focalX, focalY, principalX, principalY,
-                    ) = ptgctl.holoframe.unpack(
-                        data, [
-                        'main.image', 
-                        'depthlt.image', 
-                        'depthlt.rig2world', 
-                        'main.cam2world', 
-                        'main.focalX', 
-                        'main.focalY', 
-                        'main.principalX',
-                        'main.principalY',
-                    ])
+                    tss = {
+                        k: ptgctl.util.parse_time(d['timestamp'])
+                        for k, d in self.data.items() if 'timestamp' in d
+                    }
+                    dt = tss['main'] - tss['depthlt']
+                    dtsec = dt.total_seconds()
+                    print('timestamp difference:', str(dt))
 
-                    pts3d = Points3D(
-                        rgb, depth, self.lut, 
-                        T_rig2world, self.T_rig2cam, T_pv2world, 
-                        [focalX, focalY], 
-                        [principalX, principalY])
+                    
+
+                    pts3d, rgb = self.get_pts3d()
                     results = self.process_data(rgb, pts3d)
-                    output = orjson.dumps(self.as_json(results), option=orjson.OPT_NAIVE_UTC | orjson.OPT_SERIALIZE_NUMPY)
+                    output = orjson.dumps(
+                            self.as_json(results), 
+                            option=orjson.OPT_NAIVE_UTC | orjson.OPT_SERIALIZE_NUMPY)
                     # wsw.send_data(output)
                     print(output)
+
+    def get_pts3d(self):
+        (
+            rgb, depth,
+            T_rig2world, T_pv2world,
+            focalX, focalY, principalX, principalY,
+        ) = ptgctl.holoframe.unpack(
+            self.data, [
+            'main.image',
+            'depthlt.image',
+            'depthlt.rig2world',
+            'main.cam2world',
+            'main.focalX',
+            'main.focalY',
+            'main.principalX',
+            'main.principalY',
+        ])
+
+        pts3d = Points3D(
+            rgb, depth, self.lut,
+            T_rig2world, self.T_rig2cam, T_pv2world,
+            [focalX, focalY],
+            [principalX, principalY])
+        return pts3d, rgb
 
     def process_data(self, rgb, pts3d):
         results = self.model(rgb)
