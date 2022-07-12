@@ -69,11 +69,15 @@ class App:
         '''This is the main model code. This will run while a recipe is active.'''
         raise NotImplementedError
 
-    async def read(self, sid, last, live=True, count=1):
+    async def read(self, sid, last, live=True, count=1, block=10000):
         '''Read the next item from redis.'''
-        if live:
-            return [sid, await self.redis.xrevrange(sid, '$', last, count=count)]
-        return await self.redis.xread({sid: last}, count=count)
+        # if live:
+        #     print(sid, '+', last, count, block, flush=True)
+        #     d = await self.redis.xrevrange(sid, '+', last, count=count)
+        #     if not d:
+        #         return await self.redis.xread({sid: '$'}, count=count)
+        #     return [sid, d]
+        return await self.redis.xread({sid: last}, count=count, block=block)
 
     test = True
     async def upload(self, streams, ts='*', wrap_with_data_key=True):
@@ -100,8 +104,8 @@ class App:
             for k, d in data.items()
         }
 
-    @ptgctl.util.async2sync
     @classmethod
+    @ptgctl.util.async2sync
     async def main(cls, recipe_id=None, last='$', **kw):
         '''Run the app.'''
         app = cls(**kw)
@@ -146,7 +150,9 @@ class ClipApp(App):
         # run this loop while the recipe is still the same (this is watched in App._wait_for_active)
         while recipe_id == self.current_id:
             # read the next image
+            print('before read')
             results = await self.read(sid, last, live=live)
+
             # iterate over the results
             for sid, samples in results:
                 for ts, data in samples:

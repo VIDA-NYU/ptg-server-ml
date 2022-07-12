@@ -9,11 +9,11 @@ services:
 
   # Machine Learning for Streams
 
-  yolo3d:
-    build: ./yolo
-    container_name: yolo
-    restart: unless-stopped
-    logging: *lokilogging
+  # yolo3d:
+  #   build: ./yolo
+  #   container_name: yolo
+  #   restart: unless-stopped
+  #   logging: *lokilogging
 
   clip_zero:
     build: ./clip-zero

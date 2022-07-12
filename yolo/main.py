@@ -10,6 +10,15 @@ import warnings
 warnings.filterwarnings('ignore', message="User provided device_type of 'cuda'")
 
 
+def unpack_entries(offsets: list, content: bytes) -> list:
+    '''Unpack a single bytearray with numeric offsets into multiple byte objects.'''
+    print(offsets)
+    entries = []
+    for (sid, ts, i), (_, _, j) in zip(offsets, offsets[1:] + [(None, None, None)]):
+        entries.append((sid, ts, content[i:j]))
+    return entries
+ptgctl.util.unpack_entries = unpack_entries
+
 class App:
     def __init__(self):
         self.api = ptgctl.CLI(
@@ -37,7 +46,14 @@ class App:
         ])
 
     def run(self, **kw):
-        return asyncio.run(self.run_async(**kw))
+        while True:
+            try:
+                return asyncio.run(self.run_async(**kw))
+            except Exception:
+                import traceback
+                traceback.print_exc()
+                time.sleep(3)
+                continue
 
     async def run_async(self, **kw):
         streams = ['main', 'depthlt']
@@ -45,42 +61,68 @@ class App:
             # async with self.api.data_push_connect('+'.join(streams), **kw) as wsw:
                 while True:
                     data = await wsr.recv_data()
-                    if not data:
-                        print('empty data')
+                    try:
+                        if not data:
+                            print('empty data')
+                            await asyncio.sleep(0.1)
+                            continue
+                        data = ptgctl.holoframe.load_all(data)
+                        print(set(data), flush=True)
+                        ts = ptgctl.util.parse_time(data['main']['timestamp'])
+                        print('timestamp difference:', {
+                            k: str(ts - ptgctl.util.parse_time(d['timestamp']))
+                            for k, d in data.items() if 'timestamp' in d
+                        })
+                    except Exception:
+                        print("problem retrieving data")
+                        import traceback
+                        traceback.print_exc()
+                        await asyncio.sleep(1)
+                        continue
+
+                    try:
+                        (
+                            rgb, depth,
+                            T_rig2world, T_pv2world, 
+                            focalX, focalY, principalX, principalY,
+                        ) = ptgctl.holoframe.unpack(
+                            data, [
+                            'main.image', 
+                            'depthlt.image', 
+                            'depthlt.rig2world', 
+                            'main.cam2world', 
+                            'main.focalX', 
+                            'main.focalY', 
+                            'main.principalX',
+                            'main.principalY',
+                        ])
+                    except KeyError as e:
+                        print("missing data:", e)
+                        continue
+                    except Exception:
+                        print("problem unpacking data.")
+                        import traceback
+                        traceback.print_exc()
                         await asyncio.sleep(0.1)
                         continue
-                    data = ptgctl.holoframe.load_all(data)
-                    ts = ptgctl.util.parse_time(data['main']['timestamp'])
-                    print('timestamp difference:', {
-                        k: str(ts - ptgctl.util.parse_time(d['timestamp']))
-                        for k, d in data.items() if 'timestamp' in d
-                    })
+    
 
-                    (
-                        rgb, depth,
-                        T_rig2world, T_pv2world, 
-                        focalX, focalY, principalX, principalY,
-                    ) = ptgctl.holoframe.unpack(
-                        data, [
-                        'main.image', 
-                        'depthlt.image', 
-                        'depthlt.rig2world', 
-                        'main.cam2world', 
-                        'main.focalX', 
-                        'main.focalY', 
-                        'main.principalX',
-                        'main.principalY',
-                    ])
-
-                    pts3d = Points3D(
-                        rgb, depth, self.lut, 
-                        T_rig2world, self.T_rig2cam, T_pv2world, 
-                        [focalX, focalY], 
-                        [principalX, principalY])
-                    results = self.process_data(rgb, pts3d)
-                    output = orjson.dumps(self.as_json(results), option=orjson.OPT_NAIVE_UTC | orjson.OPT_SERIALIZE_NUMPY)
-                    # wsw.send_data(output)
-                    print(output)
+                    try:
+                        pts3d = Points3D(
+                            rgb, depth, self.lut, 
+                            T_rig2world, self.T_rig2cam, T_pv2world, 
+                            [focalX, focalY], 
+                            [principalX, principalY])
+                        results = self.process_data(rgb, pts3d)
+                        output = orjson.dumps(self.as_json(results), option=orjson.OPT_NAIVE_UTC | orjson.OPT_SERIALIZE_NUMPY)
+                        # wsw.send_data(output)
+                        print(output)
+                    except Exception:
+                        print("problem processing data")
+                        import traceback
+                        traceback.print_exc()
+                        await asyncio.sleep(0.1)
+                        continue
 
     def process_data(self, rgb, pts3d):
         results = self.model(rgb)
