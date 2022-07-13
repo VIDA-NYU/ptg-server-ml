@@ -1,4 +1,5 @@
 import os
+import time
 import asyncio
 import orjson
 import numpy as np
@@ -20,7 +21,8 @@ def unpack_entries(offsets: list, content: bytes) -> list:
 ptgctl.util.unpack_entries = unpack_entries
 
 class App:
-    def __init__(self):
+    def __init__(self, min_dist_secs=1):
+        self.min_dist_secs = min_dist_secs
         self.api = ptgctl.CLI(
             username=os.getenv('API_USER') or 'yolo', 
             password=os.getenv('API_PASS') or 'yolo')
@@ -57,7 +59,7 @@ class App:
 
     async def run_async(self, **kw):
         streams = ['main', 'depthlt']
-        async with self.api.data_pull_connect('+'.join(streams), **kw) as wsr:
+        async with self.api.data_pull_connect('+'.join(streams), time_sync_id='main', **kw) as wsr:
             # async with self.api.data_push_connect('+'.join(streams), **kw) as wsw:
                 while True:
                     data = await wsr.recv_data()
@@ -73,56 +75,55 @@ class App:
                             k: str(ts - ptgctl.util.parse_time(d['timestamp']))
                             for k, d in data.items() if 'timestamp' in d
                         })
+                        self.data.update(data)
                     except Exception:
-                        print("problem retrieving data")
-                        import traceback
-                        traceback.print_exc()
-                        await asyncio.sleep(1)
+                        await report_error("problem retrieving data", 1)
                         continue
 
                     try:
-                        (
-                            rgb, depth,
-                            T_rig2world, T_pv2world, 
-                            focalX, focalY, principalX, principalY,
-                        ) = ptgctl.holoframe.unpack(
-                            data, [
-                            'main.image', 
-                            'depthlt.image', 
-                            'depthlt.rig2world', 
-                            'main.cam2world', 
-                            'main.focalX', 
-                            'main.focalY', 
-                            'main.principalX',
-                            'main.principalY',
-                        ])
-                    except KeyError as e:
-                        print("missing data:", e)
-                        continue
-                    except Exception:
-                        print("problem unpacking data.")
-                        import traceback
-                        traceback.print_exc()
-                        await asyncio.sleep(0.1)
-                        continue
-    
-
-                    try:
-                        pts3d = Points3D(
-                            rgb, depth, self.lut, 
-                            T_rig2world, self.T_rig2cam, T_pv2world, 
-                            [focalX, focalY], 
-                            [principalX, principalY])
+                        try:
+                            pts3d, rgb = self.get_pts3d()
+                        except KeyError as e:
+                            print("missing data:", e)
+                            continue
+                        
                         results = self.process_data(rgb, pts3d)
                         output = orjson.dumps(self.as_json(results), option=orjson.OPT_NAIVE_UTC | orjson.OPT_SERIALIZE_NUMPY)
                         # wsw.send_data(output)
                         print(output)
+
                     except Exception:
-                        print("problem processing data")
-                        import traceback
-                        traceback.print_exc()
-                        await asyncio.sleep(0.1)
+                        await report_error("problem processing data", 0.1)
                         continue
+
+    def get_pts3d(self):
+        mts, dts = ptgctl.holoframe.unpack('main.timestamp', 'depthlt.timestamp')
+        secs = parse_epoch_time(mts) - parse_epoch_time(dts)
+        if abs(secs) > self.min_dist_secs:
+            raise KeyError(f"timestamps too far apart main={mts} depth={dts} ∆{secs:.3g}s")
+
+        (
+            rgb, depth,
+            T_rig2world, T_pv2world,
+            focalX, focalY, principalX, principalY,
+        ) = ptgctl.holoframe.unpack(
+            self.data, [
+            'main.image',
+            'depthlt.image',
+            'depthlt.rig2world',
+            'main.cam2world',
+            'main.focalX',
+            'main.focalY',
+            'main.principalX',
+            'main.principalY',
+        ])
+
+        pts3d = Points3D(
+            rgb, depth, self.lut,
+            T_rig2world, self.T_rig2cam, T_pv2world,
+            [focalX, focalY],
+            [principalX, principalY])
+        return pts3d, rgb
 
     def process_data(self, rgb, pts3d):
         results = self.model(rgb)
@@ -156,6 +157,16 @@ class App:
             dict(zip(self.columns, d), label=self.labels[int(d[-1])])
             for d in results
         ]
+
+
+
+
+import traceback
+
+async def report_error(msg, sleep=0.1):
+    print(msg)
+    traceback.print_exc()
+    await asyncio.sleep(sleep)
 
 
 if __name__ == '__main__':
