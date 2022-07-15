@@ -106,11 +106,16 @@ class App:
 
     @classmethod
     @ptgctl.util.async2sync
-    async def main(cls, recipe_id=None, last='$', **kw):
+    async def main(cls, recipe_id=None, last='$', recipe_id=None, **kw):
         '''Run the app.'''
         app = cls(**kw)
         await app.connect()
-        await app.run_async(recipe_id, last=last)
+        if recipe_id:
+            recipe_id = recipe_id or self.get_id()
+            assert recipe_id
+            await app.run_while_active(recipe_id)
+        else:
+            await app.run_async(recipe_id, last=last)
 
 
 class ClipApp(App):
@@ -147,6 +152,7 @@ class ClipApp(App):
         sid = self.input_sid
         # if live, it will always retrieve the latest frames. Otherwise, it will retrieve all frames.
         live = last == '$'
+        print(last, live)
         # run this loop while the recipe is still the same (this is watched in App._wait_for_active)
         while recipe_id == self.current_id:
             # read the next image

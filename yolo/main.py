@@ -6,6 +6,7 @@ import numpy as np
 import ptgctl
 import ptgctl.holoframe
 from ptgctl.pt3d import Points3D
+from ptgctl.util import parse_epoch_time
 
 import warnings
 warnings.filterwarnings('ignore', message="User provided device_type of 'cuda'")
@@ -26,6 +27,7 @@ class App:
         self.api = ptgctl.CLI(
             username=os.getenv('API_USER') or 'yolo', 
             password=os.getenv('API_PASS') or 'yolo')
+        self.data = {}
         self.load_model()
         self.calibrate()
 
@@ -41,11 +43,21 @@ class App:
         data = self.api.data('depthltCal')
         #print(data)
         data = ptgctl.holoframe.load_all(data)
+        self.data.update(data)
         #print(set(data), flush=True)
-        self.lut, self.T_rig2cam = ptgctl.holoframe.unpack(data, [
-            'depthltCal.lut', 
-            'depthltCal.rig2cam', 
-        ])
+        #self.lut, self.T_rig2cam = ptgctl.holoframe.unpack(data, [
+        #    'depthltCal.lut', 
+        #    'depthltCal.rig2cam', 
+        #])
+
+
+    def try_calibrate(self):
+        try:
+            self.calibrate()
+            return True
+        except KeyError as e:
+            print("No calibration: ", e)
+            return False
 
     def run(self, **kw):
         while True:
@@ -56,6 +68,9 @@ class App:
                 traceback.print_exc()
                 time.sleep(3)
                 continue
+
+    def run_once(self, **kw):
+        return asyncio.run(self.run_async(**kw))
 
     async def run_async(self, **kw):
         streams = ['main', 'depthlt']
@@ -69,13 +84,17 @@ class App:
                             await asyncio.sleep(0.1)
                             continue
                         data = ptgctl.holoframe.load_all(data)
-                        print(set(data), flush=True)
-                        ts = ptgctl.util.parse_time(data['main']['timestamp'])
-                        print('timestamp difference:', {
-                            k: str(ts - ptgctl.util.parse_time(d['timestamp']))
-                            for k, d in data.items() if 'timestamp' in d
-                        })
+                        #print(set(data), flush=True)
+                        #ts = ptgctl.util.parse_time(data['main']['timestamp'])
+                        #print('timestamp difference:', {
+                        #    k: str(ts - ptgctl.util.parse_time(d['timestamp']))
+                        #    for k, d in data.items() if 'timestamp' in d
+                        #})
                         self.data.update(data)
+                    except KeyError as e:
+                        print(f"key error: {e}")
+                        if 'depthltCal' not in self.data:
+                            self.calibrate()
                     except Exception:
                         await report_error("problem retrieving data", 1)
                         continue
@@ -97,7 +116,7 @@ class App:
                         continue
 
     def get_pts3d(self):
-        mts, dts = ptgctl.holoframe.unpack('main.timestamp', 'depthlt.timestamp')
+        mts, dts = ptgctl.holoframe.unpack(self.data, ['main.timestamp', 'depthlt.timestamp'])
         secs = parse_epoch_time(mts) - parse_epoch_time(dts)
         if abs(secs) > self.min_dist_secs:
             raise KeyError(f"timestamps too far apart main={mts} depth={dts} ∆{secs:.3g}s")
@@ -106,6 +125,7 @@ class App:
             rgb, depth,
             T_rig2world, T_pv2world,
             focalX, focalY, principalX, principalY,
+            lut, T_rig2cam,
         ) = ptgctl.holoframe.unpack(
             self.data, [
             'main.image',
@@ -116,11 +136,13 @@ class App:
             'main.focalY',
             'main.principalX',
             'main.principalY',
+            'depthltCal.lut',
+            'depthltCal.rig2cam',
         ])
 
         pts3d = Points3D(
-            rgb, depth, self.lut,
-            T_rig2world, self.T_rig2cam, T_pv2world,
+            rgb, depth, lut,
+            T_rig2world, T_rig2cam, T_pv2world,
             [focalX, focalY],
             [principalX, principalY])
         return pts3d, rgb
@@ -167,6 +189,7 @@ async def report_error(msg, sleep=0.1):
     print(msg)
     traceback.print_exc()
     await asyncio.sleep(sleep)
+
 
 
 if __name__ == '__main__':
