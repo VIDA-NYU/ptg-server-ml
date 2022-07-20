@@ -106,7 +106,7 @@ class App:
 
     @classmethod
     @ptgctl.util.async2sync
-    async def main(cls, recipe_id=None, last='$', recipe_id=None, **kw):
+    async def main(cls, recipe_id=None, last='$', **kw):
         '''Run the app.'''
         app = cls(**kw)
         await app.connect()
@@ -156,7 +156,6 @@ class ClipApp(App):
         # run this loop while the recipe is still the same (this is watched in App._wait_for_active)
         while recipe_id == self.current_id:
             # read the next image
-            print('before read')
             results = await self.read(sid, last, live=live)
 
             # iterate over the results
