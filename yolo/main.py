@@ -14,7 +14,7 @@ warnings.filterwarnings('ignore', message="User provided device_type of 'cuda'")
 
 def unpack_entries(offsets: list, content: bytes) -> list:
     '''Unpack a single bytearray with numeric offsets into multiple byte objects.'''
-    print(offsets)
+    #print(offsets)
     entries = []
     for (sid, ts, i), (_, _, j) in zip(offsets, offsets[1:] + [(None, None, None)]):
         entries.append((sid, ts, content[i:j]))
@@ -75,8 +75,9 @@ class App:
     async def run_async(self, **kw):
         streams = ['main', 'depthlt']
         async with self.api.data_pull_connect('+'.join(streams), time_sync_id='main', **kw) as wsr:
-            # async with self.api.data_push_connect('+'.join(streams), **kw) as wsw:
+            async with self.api.data_push_connect('yolo3d:v1', **kw) as wsw:
                 while True:
+                    #print('waiting for data')
                     data = await wsr.recv_data()
                     try:
                         if not data:
@@ -84,6 +85,7 @@ class App:
                             await asyncio.sleep(0.1)
                             continue
                         data = ptgctl.holoframe.load_all(data)
+                        #print('got', set(data))
                         #print(set(data), flush=True)
                         #ts = ptgctl.util.parse_time(data['main']['timestamp'])
                         #print('timestamp difference:', {
@@ -95,8 +97,8 @@ class App:
                         print(f"key error: {e}")
                         if 'depthltCal' not in self.data:
                             self.calibrate()
-                    except Exception:
-                        await report_error("problem retrieving data", 1)
+                    except Exception as e:
+                        await report_error(f"problem retrieving data - {type(e)}: {e}", 1)
                         continue
 
                     try:
@@ -105,15 +107,17 @@ class App:
                         except KeyError as e:
                             print("missing data:", e)
                             continue
+
+                        print(f'{time.time() - ptgctl.util.parse_epoch_time(self.data["main"]["timestamp"]):.3g} seconds behind')
                         
                         results = self.process_data(rgb, pts3d)
                         output = orjson.dumps(self.as_json(results), option=orjson.OPT_NAIVE_UTC | orjson.OPT_SERIALIZE_NUMPY)
-                        # wsw.send_data(output)
-                        print(output)
 
                     except Exception:
                         await report_error("problem processing data", 0.1)
                         continue
+                    await wsw.send_data(output)
+                    #print(output)
 
     def get_pts3d(self):
         mts, dts = ptgctl.holoframe.unpack(self.data, ['main.timestamp', 'depthlt.timestamp'])
@@ -159,9 +163,9 @@ class App:
         ) = pts3d.transform_box(xyxy[:, :4])
         valid = dist < 5  # make sure the points aren't too far
 
-        print(xyxy.shape, xyz_tl_world.shape)
-        print(valid.sum(), dist)
-        print(xyzc_world)
+        #print(xyxy.shape, xyz_tl_world.shape)
+        #print(valid.sum(), dist)
+        #print(xyzc_world)
 
         xs = [xyz_tl_world, xyz_br_world, xyz_tr_world, xyz_bl_world, xyzc_world, meta]
         xs = [x[valid] for x in xs]
