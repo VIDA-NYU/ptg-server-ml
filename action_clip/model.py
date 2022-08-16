@@ -91,25 +91,29 @@ import tqdm
 def _video_feed(src: int|str=0, fps=None):
     import cv2
     cap = cv2.VideoCapture(src)
+    if not cap.isOpened():
+        raise RuntimeError(f"Could not open video source: {src}")
     src_fps = cap.get(cv2.CAP_PROP_FPS)
     every = int(src_fps/fps) if fps else 1
     fps = fps or src_fps
     i = 0
     total = cap.get(cv2.CAP_PROP_FRAME_COUNT)
     pbar = tqdm.tqdm(total=int(total))
-    while not total or i < total:
+    while not total or pbar.n < total:
         ret, im = cap.read()
+        pbar.update()
 
         if not ret:
-            tqdm.tqdm.write(f"bad frame: {ret} {im}")
+            pbar.set_description(f"bad frame: {ret} {im}")
             continue
 
         i += 1
-        pbar.update()
         
-        if i%every: 
+        if i%every:
             continue
-        yield i / src_fps, im
+        t = i / src_fps
+        pbar.set_description(f"t={t:.1f}s")
+        yield t, im
         
 
 def _pool_frames(it, n, hop=None):
