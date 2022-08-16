@@ -1,0 +1,33 @@
+no action
+take cup
+put down cup
+fold tablecloth
+pull down tablecloth
+take washing up liquid
+pour washing up liquid into cup
+open tap
+wash cup
+rinse spoon
+rinse cup
+turn tap
+pull down cup
+take cereal bag
+rinse sink
+rinse hands
+close tap
+dry hands
+take bottle
+open bottle
+take glass
+pour water
+drink water
+put down bottle
+fold cereal bag
+put down glass
+take container
+put cereal bag into cereal box
+close cereal box
+open cupboard
+put down cereal box
+close cupboard
+take tablecloth
