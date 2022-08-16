@@ -38,11 +38,15 @@ class ActionCLIP(nn.Module):
         similarity = Z_images @ Z_text.t()
         return similarity
 
+    def _transform_np(self, im) -> torch.Tensor:
+        return self._transform(Image.fromarray(cv2.cvtColor(im, cv2.COLOR_BGR2RGB)))
+
     def preprocess_images(self, images):  # [time, h,w,c] => [1, time, ...]
         images = torch.stack([
-            self._transform(Image.fromarray(cv2.cvtColor(im, cv2.COLOR_BGR2RGB))) 
+            (torch.stack([self._transform_np(i) for i in im])
+             if self.time_pool else self._transform_np(im))
             for im in images
-        ]).to(self.device)[None]
+        ]).to(self.device)
         return images
 
     def preprocess_text(self, text):
@@ -95,12 +99,13 @@ def _video_feed(src: int|str=0, fps=None):
     pbar = tqdm.tqdm(total=int(total))
     while not total or i < total:
         ret, im = cap.read()
-        i += 1
-        pbar.update()
 
         if not ret:
             tqdm.tqdm.write(f"bad frame: {ret} {im}")
             continue
+
+        i += 1
+        pbar.update()
         
         if i%every: 
             continue
@@ -117,6 +122,13 @@ def _pool_frames(it, n, hop=None):
         if i >= hop and len(q) >= n:
             yield q
             i = 0
+
+def _batch_frames(it, n):
+    it=iter(it)
+    while True:
+        xs = (x for i, x in zip(range(n), it))
+        if not xs: return
+        yield xs
 
 
 def draw_text_list(img, texts, i=-1, tl=(10, 50), scale=0.5, space=50, color=(255, 255, 255), thickness=1):
@@ -231,7 +243,7 @@ def detect(src=0, action_file=ACTION_FILE, out_file=None, csv_file=None, show=No
         simq = collections.deque(maxlen=400)
         with profile, ImageOutput(out_file, fps, show=show) as imout, CsvWriter(csv_file, ["time"]+actions) as csvout:
             for t, im in _video_feed(src, fps=fps):
-                Z_images = model.encode_images(model.preprocess_images([im]))[0]
+                Z_images = model.encode_images(model.preprocess_images([[im]]))[0]
                 zimq.append(Z_images)
 
                 Z_images = torch.stack(tuple(zimq)).mean(dim=0)
@@ -283,7 +295,8 @@ def evaluate(
         ann_root='.', 
         checkpoint=CHECKPOINT, 
         nframes=10, fps=10, topks=[1, 5], 
-        save_video=False, show=False, 
+        batch_size=1,
+        save_video=False, show=False, csvs=True,
         output_root='output', 
         output_video_width=700
 ):
@@ -325,50 +338,53 @@ def evaluate(
         df_vid['text_idx'] = [narr_idx[x] for x in df_vid.narration]
 
         zimq = collections.deque(maxlen=nframes)
-        simq = collections.deque(maxlen=400)
-        cmap = plt.get_cmap('magma')
+        # simq = collections.deque(maxlen=400)
+        # cmap = plt.get_cmap('magma')
 
-        accout = CsvWriter(os.path.join(vid_out_dir, 'accuracy.csv'), ["time"]+[f'top_{k}' for k in topks])
-        simout = CsvWriter(os.path.join(vid_out_dir, 'similarity.csv'), ["time"]+list(texts))
+        accout = CsvWriter(os.path.join(vid_out_dir, 'accuracy.csv') if csvs else None, ["time"]+[f'top_{k}' for k in topks])
+        simout = CsvWriter(os.path.join(vid_out_dir, 'similarity.csv') if csvs else None, ["time"]+['gt']+list(texts))
         imout = ImageOutput(os.path.join(vid_out_dir, 'output.mp4') if save_video else None, fps, show=show)
         with accout, simout, imout:
-            for t, im in _video_feed(fname, fps=fps):
-                Z_images = model.encode_images(model.preprocess_images([im]))[0]
-                zimq.append(Z_images)
+            for x in _batch_frames(_video_feed(fname, fps=fps), batch_size):
+                ts, ims = zip(*x)
+                Z_images = model.encode_images(model.preprocess_images([ims]))[0]
 
-                # compute similarity
-                Z_images = torch.stack(tuple(zimq)).mean(dim=0)
-                similarity = Z_images @ Zi_text
-                similarity_soft = similarity.softmax(dim=-1)
-                i_topkmax = torch.topk(similarity_soft, max(topks), dim=-1)[1][0].detach().cpu().numpy().astype(int)
-                i_topks = [i_topkmax[:topk] for topk in topks]
-                dft = df_vid[(df_vid.start_secs < t) & (df_vid.stop_secs > t)]
-                i_trues = list(dft.text_idx.unique()) or [0]
+                for t, im, Z_images in zip(ts, ims, Z_images):
+                    zimq.append(Z_images)
 
-                # write result to csv
-                accout.write([t] + [int(bool(set(i_trues) & set(i_topk))) for i_topk in i_topks])
-                simout.write([t] + similarity_soft[0].detach().cpu().numpy().tolist())
+                    # compute similarity
+                    Z_images = torch.stack(tuple(zimq)).mean(dim=0)
+                    similarity = Z_images @ Zi_text
+                    similarity_soft = similarity.softmax(dim=-1)
+                    i_topkmax = torch.topk(similarity_soft, max(topks), dim=-1)[1].detach().cpu().numpy().astype(int)
+                    i_topks = [i_topkmax[:topk] for topk in topks]
+                    dft = df_vid[(df_vid.start_secs < t) & (df_vid.stop_secs > t)]
+                    i_trues = list(dft.text_idx.unique()) or [0]
 
-                # draw image
-                if imout.active:
-                    im = cv2.resize(im, (output_video_width, int(output_video_width*im.shape[0]/im.shape[1])))
-                    # simq.append(similarity_soft.detach().cpu().numpy())
-                    # sim = (cmap(np.concatenate(list(simq)))[:,:,:3] * 255).astype('uint8')
-                    # sim = cv2.resize(sim, (im.shape[1], 100))
+                    # write result to csv
+                    accout.write([t] + [int(bool(set(i_trues) & set(i_topk))) for i_topk in i_topks])
+                    simout.write([t] + ['+'.join([texts[i] for i in i_trues])] + similarity_soft.detach().cpu().numpy().tolist())
 
-                    pred_labels = [f'{texts[i]} ({similarity_soft[0, i]:.0%})' for i in i_topkmax]
+                    # draw image
+                    if imout.active:
+                        im = cv2.resize(im, (output_video_width, int(output_video_width*im.shape[0]/im.shape[1])))
+                        # simq.append(similarity_soft.detach().cpu().numpy())
+                        # sim = (cmap(np.stack(list(simq)))[:,:,:3] * 255).astype('uint8')
+                        # sim = cv2.resize(sim, (im.shape[1], 100))
 
-                    # _, i = draw_text_list(im, [
-                    #     f'{"*** " if i in i_topkmax[:1] else ""}{texts[i]}' for i in i_trues if i in i_topkmax
-                    # ], color=(0,255,0))
-                    _, i = draw_text_list(im, [texts[i] for i in i_trues if i in i_topkmax[:1]], color=(0,255,0))
-                    _, i = draw_text_list(im, [texts[i] for i in i_trues if i in i_topkmax[1:]], i, color=(255,255,0))
-                    _, i = draw_text_list(im, [texts[i] for i in i_trues if i not in i_topkmax], i, color=(0,0,255))
-                    _, i = draw_text_list(im, pred_labels, i)
-                    tqdm.tqdm.write(f't={t:.1f}  ' + ' | '.join([texts[i] for i in i_trues]+pred_labels[:3]))
+                        pred_labels = [f'{texts[i]} ({similarity_soft[i]:.0%})' for i in i_topkmax]
 
-                    # im = np.concatenate([im, sim], axis=0)
-                    imout.output(im)
+                        # _, i = draw_text_list(im, [
+                        #     f'{"*** " if i in i_topkmax[:1] else ""}{texts[i]}' for i in i_trues if i in i_topkmax
+                        # ], color=(0,255,0))
+                        _, i = draw_text_list(im, [texts[i] for i in i_trues if i in i_topkmax[:1]], color=(0,255,0))
+                        _, i = draw_text_list(im, [texts[i] for i in i_trues if i in i_topkmax[1:]], i, color=(255,255,0))
+                        _, i = draw_text_list(im, [texts[i] for i in i_trues if i not in i_topkmax], i, color=(0,0,255))
+                        _, i = draw_text_list(im, pred_labels, i)
+                        tqdm.tqdm.write(f't={t:.1f}  ' + ' | '.join([texts[i] for i in i_trues]+pred_labels[:3]))
+
+                        # im = np.concatenate([im, sim], axis=0)
+                        imout.output(im)
 
 if __name__ == '__main__':
     import fire
