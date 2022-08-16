@@ -1,3 +1,4 @@
+from __future__ import annotations
 import os
 import collections
 import cv2
@@ -21,6 +22,7 @@ class ActionCLIP(nn.Module):
         super().__init__()
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.model, self._transform = clip.load("ViT-B/32", device=self.device)
+        self.model.eval()
         if checkpoint:
             state_dict = torch.load(checkpoint, map_location=self.device)['state_dict']
             self.load_state_dict({
@@ -31,14 +33,15 @@ class ActionCLIP(nn.Module):
         self.dtype = self.model.dtype
 
     def forward(self, images, text):
-        Z_images = self.encode_image(images)
+        Z_images = self.encode_images(images)
         Z_text = self.encode_text(text)
         similarity = Z_images @ Z_text.t()
         return similarity
 
     def preprocess_images(self, images):  # [time, h,w,c] => [1, time, ...]
         images = torch.stack([
-            self._transform(Image.fromarray(cv2.cvtColor(im, cv2.COLOR_BGR2RGB))) for im in images
+            self._transform(Image.fromarray(cv2.cvtColor(im, cv2.COLOR_BGR2RGB))) 
+            for im in images
         ]).to(self.device)[None]
         return images
 
@@ -65,11 +68,11 @@ class ActionCLIP(nn.Module):
         x = x[torch.arange(x.shape[0]), text.argmax(dim=-1)] @ self.model.text_projection
         return F.normalize(x, dim=1)
 
-    # def get_accuracy_topk(self, images, text, text_truth, k=1):
-    #     similarity = self(images, text)
-    #     predictions_topk = torch.topk(similarity, k, dim=-1)[1]
-    #     accuracy_topk = torch.mean(text_truth == predictions_topk)
-    #     return accuracy_topk
+    def get_accuracy_topk(self, images, text, text_truth, k=1):
+        similarity = self(images, text)
+        predictions_topk = torch.topk(similarity, k, dim=-1)[1]
+        accuracy_topk = torch.mean(text_truth == predictions_topk)
+        return accuracy_topk
 
 
 def load_action_file(action_file):
@@ -81,23 +84,27 @@ def load_action_file(action_file):
     return deduped
 
 import tqdm
-def _video_feed(src=0, fps=None):
+def _video_feed(src: int|str=0, fps=None):
     import cv2
     cap = cv2.VideoCapture(src)
     src_fps = cap.get(cv2.CAP_PROP_FPS)
     every = int(src_fps/fps) if fps else 1
+    fps = fps or src_fps
     i = 0
     total = cap.get(cv2.CAP_PROP_FRAME_COUNT)
-    pbar = tqdm.tqdm(total=total)
-    while True:
+    pbar = tqdm.tqdm(total=int(total))
+    while not total or i < total:
         ret, im = cap.read()
         i += 1
         pbar.update()
+
         if not ret:
-            break
+            tqdm.tqdm.write(f"bad frame: {ret} {im}")
+            continue
+        
         if i%every: 
             continue
-        yield i / fps, im
+        yield i / src_fps, im
         
 
 def _pool_frames(it, n, hop=None):
@@ -112,14 +119,14 @@ def _pool_frames(it, n, hop=None):
             i = 0
 
 
-def draw_text_list(img, texts, i=0, tl=(10, 50), scale=0.5, space=50, color=(255, 255, 255), thickness=1):
-    for i, txt in enumerate(texts, i):
+def draw_text_list(img, texts, i=-1, tl=(10, 50), scale=0.5, space=50, color=(255, 255, 255), thickness=1):
+    for i, txt in enumerate(texts, i+1):
         cv2.putText(
             img, txt, 
             (int(tl[0]), int(tl[1]+scale*space*i)), 
             cv2.FONT_HERSHEY_COMPLEX, 
             scale, color, thickness)
-    return img
+    return img, i
 
 
 
@@ -129,6 +136,7 @@ class ImageOutput:
         self.cc = cc
         self.fps = fps
         self._show = not src if show is None else show
+        self.active = self.src or self._show
 
     def __enter__(self):
         return self
@@ -173,6 +181,7 @@ class CsvWriter:
     
     _w = _f = None
     def write(self, row):
+        if not self.fname: return
         if not self._w:
             import csv
             self._f = open(self.fname, 'w')
@@ -190,10 +199,10 @@ class CsvWriter:
 
 localfile = lambda *fs: os.path.join(os.path.dirname(__file__), *fs)
 CHECKPOINT = localfile('models/epoch=2-step=99021.ckpt')
-ACTION_FILE = localfile('actions/all_actions.txt')
+ACTION_FILE = localfile('actions/coffee-actions.txt')
 
 import datetime
-def main(src=0, action_file=ACTION_FILE, out_file=None, csv_file=None, show=None, checkpoint=CHECKPOINT, nframes=10, fps=10, topk=5, output_dir='output'):
+def detect(src=0, action_file=ACTION_FILE, out_file=None, csv_file=None, show=None, checkpoint=CHECKPOINT, nframes=10, fps=10, topk=5, output_dir='output'):
     output_dir = f'{output_dir}/outputs-{datetime.datetime.now().strftime("%Y.%m.%d-%H.%M.%S")}'
     os.makedirs(output_dir, exist_ok=True)
     
@@ -237,7 +246,7 @@ def main(src=0, action_file=ACTION_FILE, out_file=None, csv_file=None, show=None
                 
                 pred_actions = [f'{actions[i]} ({similarity_soft[0, i]:.0%})' for i in predictions_topk]
                 tqdm.tqdm.write('  |  '.join(pred_actions[:4]))
-                im = draw_text_list(im, pred_actions)
+                draw_text_list(im, pred_actions)
                 imout.output(np.concatenate([im, sim], axis=0))
                 csvout.write([t, *similarity_soft.squeeze().tolist()])
     except KeyboardInterrupt:
@@ -259,7 +268,107 @@ def main(src=0, action_file=ACTION_FILE, out_file=None, csv_file=None, show=None
 #     return sorted(set(actions))
 
 
+def np_cache(fname, func, *a, **kw):
+    if os.path.isfile(fname):
+        return np.load(fname)
+    x = func(*a, **kw)
+    np.save(fname, x)
+    return x
+
+
+NO_ACTION = "no action"
+
+def evaluate(
+        *fs, 
+        ann_root='.', 
+        checkpoint=CHECKPOINT, 
+        nframes=10, fps=10, topks=[1, 5], 
+        save_video=False, show=False, 
+        output_root='output', 
+        output_video_width=700
+):
+    import glob
+    import pandas as pd
+
+    model = ActionCLIP(checkpoint)
+
+    # load annotations
+    df = pd.concat([
+        pd.read_csv(os.path.join(ann_root, "EPIC_100_train.csv")),
+        pd.read_csv(os.path.join(ann_root, "EPIC_100_validation.csv")),
+    ])
+    ref=datetime.datetime.strptime("00:00:00","%H:%M:%S")
+    parse_delta = lambda t:(datetime.datetime.strptime(t.split('.')[0],"%H:%M:%S")-ref).total_seconds()
+    df['stop_secs'] = df.stop_timestamp.apply(parse_delta)
+    df['start_secs'] = df.start_timestamp.apply(parse_delta)
+
+    # get file list
+    fs = [
+        fi for f in fs
+        for fi in (glob.glob(os.path.join(f, '*.MP4')) if os.path.isdir(f) else [f])
+    ]
+    for fname in tqdm.tqdm(fs):
+        video_id = os.path.basename(fname).split('.')[0]
+
+        vid_out_dir = os.path.join(output_root, video_id)
+        os.makedirs(vid_out_dir, exist_ok=True)
+
+        df_vid = df[df.video_id == video_id]
+        texts = [NO_ACTION] + list(df_vid.narration.unique())
+
+        with open(os.path.join(vid_out_dir, 'actions.txt'), 'w') as fh:
+            fh.write('\n'.join(texts))
+        Zi_text = model.encode_text(model.preprocess_text(texts)).t()
+
+        narr_idx = {k: i for i, k in enumerate(texts)}
+        df_vid['text_idx'] = [narr_idx[x] for x in df_vid.narration]
+
+        zimq = collections.deque(maxlen=nframes)
+        simq = collections.deque(maxlen=400)
+        cmap = plt.get_cmap('magma')
+
+        accout = CsvWriter(os.path.join(vid_out_dir, 'accuracy.csv'), ["time"]+[f'top_{k}' for k in topks])
+        simout = CsvWriter(os.path.join(vid_out_dir, 'similarity.csv'), ["time"]+list(texts))
+        imout = ImageOutput(os.path.join(vid_out_dir, 'output.mp4') if save_video else None, fps, show=show)
+        with accout, simout, imout:
+            for t, im in _video_feed(fname, fps=fps):
+                Z_images = model.encode_images(model.preprocess_images([im]))[0]
+                zimq.append(Z_images)
+
+                # compute similarity
+                Z_images = torch.stack(tuple(zimq)).mean(dim=0)
+                similarity = Z_images @ Zi_text
+                similarity_soft = similarity.softmax(dim=-1)
+                i_topkmax = torch.topk(similarity_soft, max(topks), dim=-1)[1][0].detach().numpy().astype(int)
+                i_topks = [i_topkmax[:topk] for topk in topks]
+                dft = df_vid[(df_vid.start_secs < t) & (df_vid.stop_secs > t)]
+                i_trues = list(dft.text_idx.unique()) or [0]
+
+                # write result to csv
+                accout.write([t] + [int(bool(set(i_trues) & set(i_topk))) for i_topk in i_topks])
+                simout.write([t] + similarity_soft[0].detach().numpy().tolist())
+
+                # draw image
+                if imout.active:
+                    im = cv2.resize(im, (output_video_width, int(output_video_width*im.shape[0]/im.shape[1])))
+                    # simq.append(similarity_soft.detach().numpy())
+                    # sim = (cmap(np.concatenate(list(simq)))[:,:,:3] * 255).astype('uint8')
+                    # sim = cv2.resize(sim, (im.shape[1], 100))
+
+                    pred_labels = [f'{texts[i]} ({similarity_soft[0, i]:.0%})' for i in i_topkmax]
+
+                    # _, i = draw_text_list(im, [
+                    #     f'{"*** " if i in i_topkmax[:1] else ""}{texts[i]}' for i in i_trues if i in i_topkmax
+                    # ], color=(0,255,0))
+                    _, i = draw_text_list(im, [texts[i] for i in i_trues if i in i_topkmax[:1]], color=(0,255,0))
+                    _, i = draw_text_list(im, [texts[i] for i in i_trues if i in i_topkmax[1:]], i, color=(255,255,0))
+                    _, i = draw_text_list(im, [texts[i] for i in i_trues if i not in i_topkmax], i, color=(0,0,255))
+                    _, i = draw_text_list(im, pred_labels, i)
+                    tqdm.tqdm.write(f't={t:.1f}  ' + ' | '.join([texts[i] for i in i_trues]+pred_labels[:3]))
+
+                    # im = np.concatenate([im, sim], axis=0)
+                    imout.output(im)
 
 if __name__ == '__main__':
     import fire
-    fire.Fire(main)
+    fire.Fire()
