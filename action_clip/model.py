@@ -126,7 +126,7 @@ def _pool_frames(it, n, hop=None):
 def _batch_frames(it, n):
     it=iter(it)
     while True:
-        xs = (x for i, x in zip(range(n), it))
+        xs = [x for i, x in zip(range(n), it)]
         if not xs: return
         yield xs
 
@@ -142,8 +142,8 @@ def draw_text_list(img, texts, i=-1, tl=(10, 50), scale=0.5, space=50, color=(25
 
 
 
-class ImageOutput:
-    def __init__(self, src, fps, cc='avc1', show=None):
+class ImageOutput:#'avc1', 'mp4v', 
+    def __init__(self, src, fps, cc='h264', show=None):
         self.src = src
         self.cc = cc
         self.fps = fps
@@ -172,6 +172,8 @@ class ImageOutput:
             self._w = cv2.VideoWriter(
                 self.src, cv2.VideoWriter_fourcc(*self.cc),
                 self.fps, im.shape[:2][::-1], True)
+            if not self._w.isOpened():
+                raise RuntimeError(f"Video writer did not open - probably because {self.cc}")
         self._w.write(im)
 
     def show_video(self, im):
