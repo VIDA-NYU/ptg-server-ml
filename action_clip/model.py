@@ -255,7 +255,7 @@ def detect(src=0, action_file=ACTION_FILE, out_file=None, csv_file=None, show=No
                 similarity_soft = similarity.softmax(dim=-1)
                 predictions_topk = torch.topk(similarity_soft, topk, dim=-1)[1][0]
 
-                similarity_soft = similarity_soft.detach().numpy()
+                similarity_soft = similarity_soft.detach().cpu().numpy()
                 simq.append(similarity_soft)
                 sim = (cmap(np.concatenate(list(simq)))[:,:,:3] * 255).astype('uint8')
                 sim = cv2.resize(sim, (im.shape[1], 150))
@@ -308,6 +308,7 @@ def evaluate(
     import pandas as pd
 
     model = ActionCLIP(checkpoint)
+    print('device', model.device)
 
     # load annotations
     df = pd.concat([
@@ -359,19 +360,19 @@ def evaluate(
                     Z_images = torch.stack(tuple(zimq)).mean(dim=0)
                     similarity = Z_images @ Zi_text
                     similarity_soft = similarity.softmax(dim=-1)
-                    i_topkmax = torch.topk(similarity_soft, max(topks), dim=-1)[1].detach().numpy().astype(int)
+                    i_topkmax = torch.topk(similarity_soft, max(topks), dim=-1)[1].detach().cpu().numpy().astype(int)
                     i_topks = [i_topkmax[:topk] for topk in topks]
                     dft = df_vid[(df_vid.start_secs < t) & (df_vid.stop_secs > t)]
                     i_trues = list(dft.text_idx.unique()) or [0]
 
                     # write result to csv
                     accout.write([t] + [int(bool(set(i_trues) & set(i_topk))) for i_topk in i_topks])
-                    simout.write([t] + ['+'.join([texts[i] for i in i_trues])] + similarity_soft.detach().numpy().tolist())
+                    simout.write([t] + ['+'.join([texts[i] for i in i_trues])] + similarity_soft.detach().cpu().numpy().tolist())
 
                     # draw image
                     if imout.active:
                         im = cv2.resize(im, (output_video_width, int(output_video_width*im.shape[0]/im.shape[1])))
-                        # simq.append(similarity_soft.detach().numpy())
+                        # simq.append(similarity_soft.detach().cpu().numpy())
                         # sim = (cmap(np.stack(list(simq)))[:,:,:3] * 255).astype('uint8')
                         # sim = cv2.resize(sim, (im.shape[1], 100))
 
