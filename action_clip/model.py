@@ -308,6 +308,7 @@ def evaluate(
         overwrite=False,
         run_name=None,
         split=None,
+        normalized=None,
 ):
     import glob
     import pandas as pd
@@ -318,8 +319,8 @@ def evaluate(
 
     # load annotations
     df = pd.concat([
-        pd.read_csv(os.path.join(ann_root, "EPIC_100_train.csv")).assign(split='train'),
-        pd.read_csv(os.path.join(ann_root, "EPIC_100_validation.csv")).assign(split='val'),
+        pd.read_csv(os.path.join(ann_root, f"EPIC_100_train{'_normalized' if normalized else ''}.csv")).assign(split='train'),
+        pd.read_csv(os.path.join(ann_root, f"EPIC_100_validation{'_normalized' if normalized else ''}.csv")).assign(split='val'),
     ])
     ref=datetime.datetime.strptime("00:00:00","%H:%M:%S")
     parse_delta = lambda t:(datetime.datetime.strptime(t.split('.')[0],"%H:%M:%S")-ref).total_seconds()
@@ -347,13 +348,14 @@ def evaluate(
                     with open(acc_fname, 'r') as f:
                         for i, line in enumerate(f):
                             if i and line:
-                                ann_seconds = int(line.split(',')[0])
-                cap = cv2.VideoCapture()
+                                ann_seconds = float(line.split(',')[0])
+                cap = cv2.VideoCapture(fname)
                 seconds = (cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0) / (cap.get(cv2.CAP_PROP_FPS) or 1)
                 cap.release()
                 print("annotation seconds:", ann_seconds, "video seconds:", seconds)
-                print("remaining", (seconds - ann_seconds) / seconds)
-                if (seconds - ann_seconds) / seconds < 0.2:
+                if seconds:
+                    print("remaining", (seconds - ann_seconds) / seconds)
+                if seconds and (seconds - ann_seconds) / seconds < 0.2:
                     print("skipping", video_id)
                     continue
             os.makedirs(vid_out_dir, exist_ok=True)
