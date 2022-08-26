@@ -21,19 +21,18 @@ from .core import Processor
 from .util import StreamReader, StreamWriter, ImageOutput, nowstring, draw_text_list
 
 
+device = "cuda" if torch.cuda.is_available() else "cpu"
 
 class ZeroClip(Processor):
     output_prefix = 'zero_clip'
     prompts = {
         # 'tools': 'a photo of a {}',
         # 'ingredients': 'a photo of a {}',
-        'instructions': '{}',
+        'steps': '{}',
     }
     STORE_DIR = 'post'
-    model = None
 
     def _load_model(self, model_name="ViT-B/32", **kw):
-        self.device = device = "cuda" if torch.cuda.is_available() else "cpu"
         self.model, self.preprocess = clip.load(model_name, device=device)
         self.tokenize = clip.tokenize
 
@@ -60,7 +59,7 @@ class ZeroClip(Processor):
     #             return new_recipe_id
 
     async def _call_async(self, recipe_id, replay=None, fullspeed=None, out_file=None, fps=5, show=True, store_dir=None, **kw):
-        if not self.model:
+        if not hasattr(self, 'model'):
             self._load_model(**kw)
         self.current_id = recipe_id
         assert recipe_id, "You must provide a recipe ID, otherwise we have nothing to compare"
@@ -70,7 +69,9 @@ class ZeroClip(Processor):
         z_texts = {k: self.encode_text(recipe[k], prompt) for k, prompt in self.prompts.items()}
 
         if out_file is True:
-            out_file = os.path.join(store_dir or self.STORE_DIR, replay or nowstring(), f'{self.output_prefix}.mp4')
+            out_file = os.path.join(
+                store_dir or self.STORE_DIR, replay or nowstring(), 
+                f'{self.__class__.__name__}-{self.output_prefix}.mp4')
 
         out_keys = set(texts)
         out_sids = [f'{replay or ""}{self.output_prefix}:{k}' for k in out_keys]
@@ -99,21 +100,21 @@ class ZeroClip(Processor):
 
     def encode_text(self, texts, prompt_format=None, return_texts=False):
         '''Encode text prompts. Returns formatted prompts and encoded CLIP text embeddings.'''
-        toks = self.tokenize([prompt_format.format(x) for x in texts] if prompt_format else texts).to(self.device)
+        toks = self.tokenize([prompt_format.format(x) for x in texts] if prompt_format else texts).to(device)
         z = self.model.encode_text(toks)
         z /= z.norm(dim=-1, keepdim=True)
         return (z, texts) if return_texts else z
 
     def encode_image(self, image):
         '''Encode image to CLIP embedding.'''
-        image = self.preprocess(Image.fromarray(image)).unsqueeze(0).to(self.device)
+        image = self.preprocess(Image.fromarray(image[:,:,::-1]))[None].to(device)
         z_image = self.model.encode_image(image)
         z_image /= z_image.norm(dim=-1, keepdim=True)
         return z_image
 
     def compare_image_text(self, z_image, z_text):
         '''Compare image and text similarity (not sure why the 100, it's from the CLIP repo).'''
-        return ((z_image @ z_text.T)).softmax(dim=-1)
+        return (100 * (z_image @ z_text.T)).softmax(dim=-1)
 
     def _bundle(self, text, similarity):
         '''Prepare text and similarity to be uploaded.'''
@@ -124,12 +125,11 @@ class ZeroClip(Processor):
 
 
 class ActionClip2(ZeroClip):
-    def _load_model(self, n_samples=5, **kw):
-        device = "cuda" if torch.cuda.is_available() else "cpu"
+    def _load_model(self, n_samples=10, **kw):
         super()._load_model(**kw)
         checkpoint = torch.load(
             os.path.join(os.path.dirname(__file__), '../models/model_best.pt'),
-            map_location=torch.device('cpu'))
+            map_location=torch.device(device))
 
         wrapper = nn.Module()
         self.fusion = wrapper.module = visual_prompt(checkpoint['model_state_dict'], n_samples)
@@ -138,17 +138,12 @@ class ActionClip2(ZeroClip):
         self.q_z_im = collections.deque(maxlen=n_samples)
 
     def encode_image(self, im):
-        im = self.preprocess(Image.fromarray(im))[None].to(self.device)
+        im = self.preprocess(Image.fromarray(im[:,:,::-1]))[None].to(device)
         z_image = self.model.encode_image(im)
         self.q_z_im.append(z_image)
         z_image = self.fusion(torch.stack(list(self.q_z_im)))
         z_image = F.normalize(z_image, dim=1)
         return z_image
-
-#     def encode_image_sequence(self, images):
-#         z_image = self.fusion(time_distributed(self.model.encode_image, images))
-#         z_image /= z_image.norm(dim=-1, keepdims=True)
-#         return z_image
 
 # def time_distributed(func, x):
 #     b, t, *sh = x.shape
@@ -163,18 +158,15 @@ class visual_prompt(nn.Module):
 
         embed_dim = clip_state_dict["text_projection"].shape[1]
         context_length = clip_state_dict["positional_embedding"].shape[0]
-        vocab_size = clip_state_dict["token_embedding.weight"].shape[0]
+        # vocab_size = clip_state_dict["token_embedding.weight"].shape[0]
         transformer_width = clip_state_dict["ln_final.weight"].shape[0]
         transformer_heads = transformer_width // 64
-
-        transformer_layers = len(set(k.split(".")[2] for k in clip_state_dict if k.startswith(f"transformer.resblocks")))
+        # transformer_layers = len(set(k.split(".")[2] for k in clip_state_dict if k.startswith(f"transformer.resblocks")))
 
         self.frame_position_embeddings = nn.Embedding(context_length, embed_dim)
         self.transformer = TemporalTransformer(width=embed_dim, layers=6, heads=transformer_heads)
 
     def init_weights(self, module):
-        """ Initialize the weights.
-        """
         if isinstance(module, (nn.Linear, nn.Embedding)):
             # Slightly different from the TF version which uses truncated_normal for initialization
             # cf https://github.com/pytorch/pytorch/pull/5617
