@@ -32,10 +32,6 @@ class ZeroClip(Processor):
     }
     STORE_DIR = 'post'
 
-    def _load_model(self, model_name="ViT-B/32", **kw):
-        self.model, self.preprocess = clip.load(model_name, device=device)
-        self.tokenize = clip.tokenize
-
     async def call_async(self, recipe_id=None, *a, **kw):
         if recipe_id:
             return await self._call_async(recipe_id, *a, **kw)
@@ -97,6 +93,10 @@ class ZeroClip(Processor):
                     ])[0], t)
 
             await asyncio.gather(_stream(), reader.watch_replay())
+
+    def _load_model(self, model_name="ViT-B/32", **kw):
+        self.model, self.preprocess = clip.load(model_name, device=device)
+        self.tokenize = clip.tokenize
 
     def encode_text(self, texts, prompt_format=None, return_texts=False):
         '''Encode text prompts. Returns formatted prompts and encoded CLIP text embeddings.'''
