@@ -3,10 +3,16 @@ import os
 import asyncio
 import orjson
 import tqdm
+import collections
 
 import numpy as np
 from PIL import Image
 import cv2
+
+import torch
+from torch import nn
+import torch.nn.functional as F
+import clip
 
 import ptgctl
 from ptgctl import holoframe
@@ -19,38 +25,44 @@ from .util import StreamReader, StreamWriter, ImageOutput, nowstring, draw_text_
 class ZeroClip(Processor):
     output_prefix = 'zero_clip'
     prompts = {
-        'tools': 'a photo of a {}',
-        'ingredients': 'a photo of a {}',
+        # 'tools': 'a photo of a {}',
+        # 'ingredients': 'a photo of a {}',
         'instructions': '{}',
     }
     STORE_DIR = 'post'
+    model = None
 
-    def __init__(self, model_name="ViT-B/32"):
-        super().__init__()
-        import torch, clip
+    def _load_model(self, model_name="ViT-B/32", **kw):
         self.device = device = "cuda" if torch.cuda.is_available() else "cpu"
         self.model, self.preprocess = clip.load(model_name, device=device)
         self.tokenize = clip.tokenize
 
-    async def call_async(self, recipe_id, *a, **kw):
-        return await asyncio.gather(
-            self._call_async(recipe_id, *a, **kw),
-            self._watch_server_state(recipe_id)
-        )
+    async def call_async(self, recipe_id=None, *a, **kw):
+        if recipe_id:
+            return await self._call_async(recipe_id, *a, **kw)
+    #     recipe_id = self.api.sessions.current_recipe()
+    #     if not recipe_id:
+    #         print("waiting for recipe to be activated")
+    #         recipe_id = await self._watch_recipe_id(recipe_id)
+    #     return await asyncio.gather(
+    #         self._call_async(recipe_id, *a, **kw),
+    #         self._watch_recipe_id(recipe_id)
+    #     )
 
-    async def _watch_recipe_id(self, recipe_id):
-        loop = asyncio.get_event_loop()
-        while True:
-            if recipe_id and self.current_id != recipe_id:
-                break
-            new_recipe_id, _ = await asyncio.gather(
-                loop.run_in_executor(None, self.api.recipes.current),
-                asyncio.sleep(3)
-            )
+    # async def _watch_recipe_id(self, recipe_id):
+    #     loop = asyncio.get_event_loop()
+    #     while True:
+    #         new_recipe_id, _ = await asyncio.gather(
+    #             loop.run_in_executor(None, self.api.sessions.current_recipe),
+    #             asyncio.sleep(3)
+    #         )
+    #         if new_recipe_id != recipe_id:
+    #             return new_recipe_id
 
-    async def call_async(self, recipe_id, replay=None, fullspeed=None, out_file=None, fps=10, show=True, store_dir=None):
+    async def _call_async(self, recipe_id, replay=None, fullspeed=None, out_file=None, fps=5, show=True, store_dir=None, **kw):
+        if not self.model:
+            self._load_model(**kw)
         self.current_id = recipe_id
-        import torch
         assert recipe_id, "You must provide a recipe ID, otherwise we have nothing to compare"
         # load the recipe from the api
         recipe = self.api.recipes.get(recipe_id)
@@ -73,11 +85,14 @@ class ZeroClip(Processor):
                     # encode the image and compare to text queries
                     im = d['image']
                     z_image = self.encode_image(im)
+                    if z_image is None:
+                        continue
                     sims = {k: self.compare_image_text(z_image, z_texts[k])[0] for k in out_keys}
                     # await writer.write([self._bundle(texts[k], sims[k]) for k in out_keys])
                     imout.output(draw_text_list(cv2.cvtColor(im, cv2.COLOR_RGB2BGR), [
                         f'{texts[k][i]} ({sims[k][i]:.0%})' 
-                            for k in out_keys for i in torch.topk(sims[k], 3, dim=-1)[1].tolist()
+                        for k in out_keys 
+                        for i in torch.topk(sims[k], 3, dim=-1)[1].tolist()
                     ])[0], t)
 
             await asyncio.gather(_stream(), reader.watch_replay())
@@ -98,15 +113,151 @@ class ZeroClip(Processor):
 
     def compare_image_text(self, z_image, z_text):
         '''Compare image and text similarity (not sure why the 100, it's from the CLIP repo).'''
-        return (100.0 * (z_image @ z_text.T)).softmax(dim=-1)
+        return ((z_image @ z_text.T)).softmax(dim=-1)
 
     def _bundle(self, text, similarity):
         '''Prepare text and similarity to be uploaded.'''
         return dict(zip(text, similarity.tolist()))
 
 
+
+
+
+class ActionClip2(ZeroClip):
+    def _load_model(self, n_samples=5, **kw):
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        super()._load_model(**kw)
+        checkpoint = torch.load(
+            os.path.join(os.path.dirname(__file__), '../models/model_best.pt'),
+            map_location=torch.device('cpu'))
+
+        wrapper = nn.Module()
+        self.fusion = wrapper.module = visual_prompt(checkpoint['model_state_dict'], n_samples)
+        self.model.load_state_dict(checkpoint['model_state_dict'])
+        wrapper.load_state_dict(checkpoint['fusion_model_state_dict'])
+        self.q_z_im = collections.deque(maxlen=n_samples)
+
+    def encode_image(self, im):
+        im = self.preprocess(Image.fromarray(im))[None].to(self.device)
+        z_image = self.model.encode_image(im)
+        self.q_z_im.append(z_image)
+        z_image = self.fusion(torch.stack(list(self.q_z_im)))
+        z_image = F.normalize(z_image, dim=1)
+        return z_image
+
+#     def encode_image_sequence(self, images):
+#         z_image = self.fusion(time_distributed(self.model.encode_image, images))
+#         z_image /= z_image.norm(dim=-1, keepdims=True)
+#         return z_image
+
+# def time_distributed(func, x):
+#     b, t, *sh = x.shape
+#     y = func(x.view(b*t, *sh))
+#     return y.view(b,t,*y.shape[1:])
+
+
+class visual_prompt(nn.Module):
+    def __init__(self, clip_state_dict, T=5):
+        super().__init__()
+        self.T = T
+
+        embed_dim = clip_state_dict["text_projection"].shape[1]
+        context_length = clip_state_dict["positional_embedding"].shape[0]
+        vocab_size = clip_state_dict["token_embedding.weight"].shape[0]
+        transformer_width = clip_state_dict["ln_final.weight"].shape[0]
+        transformer_heads = transformer_width // 64
+
+        transformer_layers = len(set(k.split(".")[2] for k in clip_state_dict if k.startswith(f"transformer.resblocks")))
+
+        self.frame_position_embeddings = nn.Embedding(context_length, embed_dim)
+        self.transformer = TemporalTransformer(width=embed_dim, layers=6, heads=transformer_heads)
+
+    def init_weights(self, module):
+        """ Initialize the weights.
+        """
+        if isinstance(module, (nn.Linear, nn.Embedding)):
+            # Slightly different from the TF version which uses truncated_normal for initialization
+            # cf https://github.com/pytorch/pytorch/pull/5617
+            module.weight.data.normal_(mean=0.0, std=0.02)
+        elif isinstance(module, LayerNorm):
+            if 'beta' in dir(module) and 'gamma' in dir(module):
+                module.beta.data.zero_()
+                module.gamma.data.fill_(1.0)
+            else:
+                module.bias.data.zero_()
+                module.weight.data.fill_(1.0)
+        if isinstance(module, nn.Linear) and module.bias is not None:
+            module.bias.data.zero_()
+
+    def forward(self, x):
+        b, t, c = x.size()
+        x_original = x = x.contiguous()
+        position_ids = torch.arange(t, dtype=torch.long, device=x.device)[None].expand(x.size(0), -1)
+        frame_position_embeddings = self.frame_position_embeddings(position_ids)
+        x = x + frame_position_embeddings
+
+        x = x.permute(1, 0, 2)  # NLD -> LND
+        x = self.transformer(x)
+        x = x.permute(1, 0, 2)  # LND -> NLD
+        x = x.type(x_original.dtype) + x_original
+        return x.mean(dim=1, keepdim=False)
+
+class LayerNorm(nn.Module):
+    def __init__(self, hidden_size, eps=1e-12):
+        """Construct a layernorm module in the TF style (epsilon inside the square root).
+        """
+        super(LayerNorm, self).__init__()
+        self.weight = nn.Parameter(torch.ones(hidden_size))
+        self.bias = nn.Parameter(torch.zeros(hidden_size))
+        self.variance_epsilon = eps
+
+    def forward(self, x):
+        u = x.mean(-1, keepdim=True)
+        s = (x - u).pow(2).mean(-1, keepdim=True)
+        x = (x - u) / torch.sqrt(s + self.variance_epsilon)
+        return self.weight * x + self.bias
+
+class TemporalTransformer(nn.Module):
+    def __init__(self, width: int, layers: int, heads: int, attn_mask: torch.Tensor = None):
+        super().__init__()
+        self.width = width
+        self.layers = layers
+        self.resblocks = nn.Sequential(*[ResidualAttentionBlock(width, heads, attn_mask) for _ in range(layers)])
+
+    def forward(self, x: torch.Tensor):
+        return self.resblocks((x))
+
+class QuickGELU(nn.Module):
+    def forward(self, x: torch.Tensor):
+        return x * torch.sigmoid(1.702 * x)
+
+
+class ResidualAttentionBlock(nn.Module):
+    def __init__(self, d_model: int, n_head: int, attn_mask: torch.Tensor = None):
+        super().__init__()
+
+        self.attn = nn.MultiheadAttention(d_model, n_head)
+        self.ln_1 = LayerNorm(d_model)
+        self.mlp = nn.Sequential(collections.OrderedDict([
+            ("c_fc", nn.Linear(d_model, d_model * 4)),
+            ("gelu", QuickGELU()),
+            ("c_proj", nn.Linear(d_model * 4, d_model))
+        ]))
+        self.ln_2 = LayerNorm(d_model)
+        self.attn_mask = attn_mask
+
+    def attention(self, x: torch.Tensor):
+        self.attn_mask = self.attn_mask.to(dtype=x.dtype, device=x.device) if self.attn_mask is not None else None
+        return self.attn(x, x, x, need_weights=False, attn_mask=self.attn_mask)[0]
+
+    def forward(self, x: torch.Tensor):
+        x = x + self.attention(self.ln_1(x))
+        x = x + self.mlp(self.ln_2(x))
+        return x
+
 if __name__ == '__main__':
     import fire
     fire.Fire({
         'zero': ZeroClip,
+        'action': ActionClip2,
     })
