@@ -125,10 +125,10 @@ class ZeroClip(Processor):
 
 
 class ActionClip2(ZeroClip):
-    def _load_model(self, n_samples=10, **kw):
+    def _load_model(self, n_samples=10, checkpoint=None, **kw):
         super()._load_model(**kw)
         checkpoint = torch.load(
-            os.path.join(os.path.dirname(__file__), '../models/model_best.pt'),
+            checkpoint or os.path.join(os.path.dirname(__file__), '../models/model_best.pt'),
             map_location=torch.device(device))
 
         wrapper = nn.Module()
