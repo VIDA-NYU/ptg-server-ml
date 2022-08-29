@@ -10,11 +10,18 @@ import clip
 from PIL import Image
 import matplotlib.pyplot as plt
 
+device = ("cuda" if torch.cuda.is_available() else "cpu")
+
+
+localfile = lambda *fs: os.path.join(os.path.dirname(__file__), *fs)
+CHECKPOINT = localfile('models/epoch=2-step=99021.ckpt')
+CHECKPOINT2 = localfile('models/model_best.pt')
+
 
 def time_distributed(model, x):
     xr = x.contiguous().view(-1, *x.shape[2:])
     y = model(xr)
-    return y.contiguous().view(*x.shape[:2], *y.shape[1:])
+    return y.contiguous().view(*(x.shape[:2]+y.shape[1:]))
 
 
 class ActionCLIP(nn.Module):
@@ -23,14 +30,27 @@ class ActionCLIP(nn.Module):
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.model, self._transform = clip.load("ViT-B/32", device=self.device)
         self.model.eval()
+        self.time_pool = time_pool
+        self.dtype = self.model.dtype
+        self._load_weights(checkpoint)
+
+    def _load_weights(self, checkpoint):
+        checkpoint = checkpoint or CHECKPOINT
         if checkpoint:
             state_dict = torch.load(checkpoint, map_location=self.device)['state_dict']
             self.load_state_dict({
                 k: v for k, v in state_dict.items() 
                 if not k.startswith('teacher.') and k not in {'sink_temp'}
             })
-        self.time_pool = time_pool
-        self.dtype = self.model.dtype
+        checkpoint = torch.load(
+            os.path.join(os.path.dirname(__file__), ),
+            map_location=torch.device(device))
+
+        wrapper = nn.Module()
+        self.fusion = wrapper.module = visual_prompt(checkpoint['model_state_dict'], n_samples)
+        self.model.load_state_dict(checkpoint['model_state_dict'])
+        wrapper.load_state_dict(checkpoint['fusion_model_state_dict'])
+        self.q_z_im = collections.deque(maxlen=n_samples)
 
     def forward(self, images, text):
         Z_images = self.encode_images(images)
@@ -44,7 +64,7 @@ class ActionCLIP(nn.Module):
     def preprocess_images(self, images):  # [time, h,w,c] => [1, time, ...]
         images = torch.stack([
             (torch.stack([self._transform_np(i) for i in im])
-             if self.time_pool else self._transform_np(im))
+                if self.time_pool else self._transform_np(im))
             for im in images
         ]).to(self.device)
         return images
@@ -72,11 +92,35 @@ class ActionCLIP(nn.Module):
         x = x[torch.arange(x.shape[0]), text.argmax(dim=-1)] @ self.model.text_projection
         return F.normalize(x, dim=1)
 
+    def integrate_time(self, Z_ims):
+        return Z_ims.mean(dim=0)
+
     def get_accuracy_topk(self, images, text, text_truth, k=1):
         similarity = self(images, text)
         predictions_topk = torch.topk(similarity, k, dim=-1)[1]
         accuracy_topk = torch.mean(text_truth == predictions_topk)
         return accuracy_topk
+
+
+
+
+class ActionCLIP2(ActionCLIP):
+    def _load_weights(self, checkpoint):
+        from ptgprocess.clip import visual_prompt
+        checkpoint = checkpoint or CHECKPOINT2
+        checkpoint = torch.load(
+            checkpoint,
+            map_location=torch.device(device))
+
+        wrapper = nn.Module()
+        self.fusion = wrapper.module = visual_prompt(checkpoint['model_state_dict'], n_samples)
+        self.model.load_state_dict(checkpoint['model_state_dict'])
+        wrapper.load_state_dict(checkpoint['fusion_model_state_dict'])
+
+    def integrate_time(self, Z_image):
+        z_image = self.fusion(Z_image).mean(dim=0)
+        return F.normalize(z_image, dim=1)
+
 
 
 def load_action_file(action_file):
@@ -215,12 +259,10 @@ class CsvWriter:
 
 
 
-localfile = lambda *fs: os.path.join(os.path.dirname(__file__), *fs)
-CHECKPOINT = localfile('models/epoch=2-step=99021.ckpt')
 ACTION_FILE = localfile('actions/coffee-actions.txt')
 
 import datetime
-def detect(src=0, action_file=ACTION_FILE, out_file=None, csv_file=None, show=None, checkpoint=CHECKPOINT, nframes=10, fps=10, topk=5, output_dir='output'):
+def detect(src=0, action_file=ACTION_FILE, out_file=None, csv_file=None, show=None, checkpoint=None, nframes=10, fps=10, topk=5, output_dir='output'):
     output_dir = f'{output_dir}/outputs-{datetime.datetime.now().strftime("%Y.%m.%d-%H.%M.%S")}'
     os.makedirs(output_dir, exist_ok=True)
     
@@ -230,7 +272,7 @@ def detect(src=0, action_file=ACTION_FILE, out_file=None, csv_file=None, show=No
     if csv_file is True:
         csv_file = os.path.join(output_dir, f'actionclip-{os.path.basename(src_str)}.csv')
     print("loading model")
-    model = ActionCLIP(checkpoint)
+    model = ActionCLIP2(checkpoint)
     print('loaded model')
 
     actions = load_action_file(action_file)
@@ -252,7 +294,7 @@ def detect(src=0, action_file=ACTION_FILE, out_file=None, csv_file=None, show=No
                 Z_images = model.encode_images(model.preprocess_images([[im]]))[0]
                 zimq.append(Z_images)
 
-                Z_images = torch.stack(tuple(zimq)).mean(dim=0)
+                Z_images = model.integrate_time(torch.stack(tuple(zimq)))
                 similarity = Z_images @ Z_text
                 similarity_soft = similarity.softmax(dim=-1)
                 predictions_topk = torch.topk(similarity_soft, topk, dim=-1)[1][0]
@@ -299,7 +341,7 @@ NO_ACTION = "no action"
 def evaluate(
         *fs, 
         ann_root='.', 
-        checkpoint=CHECKPOINT, 
+        checkpoint=None, 
         nframes=10, fps=10, topks=[1, 5], 
         batch_size=1,
         save_video=False, show=False, csvs=True,
@@ -314,7 +356,7 @@ def evaluate(
     import pandas as pd
     pd.options.mode.chained_assignment = None
 
-    model = ActionCLIP(checkpoint)
+    model = ActionCLIP2(checkpoint)
     print('device', model.device)
 
     # load annotations

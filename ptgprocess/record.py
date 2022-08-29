@@ -15,14 +15,14 @@ from .core import Processor
 from .util import Context, StreamReader
 
 
-class Writer(Context):
-    def __init__(self, name, store_dir, **kw):
+class BaseWriter(Context):
+    def __init__(self, **kw):
         super().__init__(**kw)
     def context(self, sample, t_start): yield self
-    def write(self, t, data): raise NotImplementedError
+    def write(self, data, t): raise NotImplementedError
 
 
-class RawWriter(Writer):
+class RawWriter(BaseWriter):
     raw=True
     def __init__(self, name, store_dir, **kw):
         super().__init__(**kw)
@@ -34,11 +34,11 @@ class RawWriter(Writer):
         with zipfile.ZipFile(self.fname, 'w', zipfile.ZIP_STORED, False) as self.writer:
             yield self
 
-    def write(self, id, data):
+    def write(self, data, ts):
         self.writer.writestr(id, data)
 
 
-class VideoWriter(Writer):
+class VideoWriter(BaseWriter):
     def __init__(self, name, store_dir, sample, t_start, fps=15, vcodec='libx264', crf='23',  **kw):
         super().__init__(**kw)
         fname = os.path.join(store_dir, f'{name}.mp4')
@@ -77,17 +77,18 @@ class VideoWriter(Writer):
             process.wait()
             print('finished')
 
-    def write(self, ts, data):
+    def write(self, data, ts=None):
         im = data['image'][:,:,::-1].tobytes()
-        while self.t < ts - self.t_start:
-            self.writer.write(self.prev_im)
-            self.t += 1.0 / self.fps
+        if ts is not None:
+            while self.t < ts - self.t_start:
+                self.writer.write(self.prev_im)
+                self.t += 1.0 / self.fps
+            self.prev_im = im
         self.writer.write(im)
         self.t += 1.0 / self.fps
-        self.prev_im = im
 
 
-class AudioWriter(Writer):
+class AudioWriter(BaseWriter):
     def __init__(self, name, store_dir, **kw):
         self.fname = os.path.join(store_dir, f'{name}.wav')
         super().__init__(**kw)
@@ -101,7 +102,7 @@ class AudioWriter(Writer):
         with soundfile.SoundFile(self.fname, 'w', samplerate=sample['sr'], channels=self.channels) as self.sf:
             yield self
 
-    def write(self, t, d):
+    def write(self, d, t=None):
         pos = d['pos']
         y = d['audio']
         if self.lastpos:
@@ -111,11 +112,11 @@ class AudioWriter(Writer):
         self.lastpos = pos + len(y)
 
 
-class JsonWriter(Writer):
+class JsonWriter(BaseWriter):
     raw=True
     def __init__(self, name, store_dir, **kw):
         super().__init__(**kw)
-        self.fname = os.path.join(store_dir, f'{name}.wav')
+        self.fname = os.path.join(store_dir, f'{name}.json')
         
     def context(self, **kw):
         self.i = 0
@@ -127,19 +128,20 @@ class JsonWriter(Writer):
             finally:
                 self.fh.write(b'\n]\n')
 
-    def write(self, ts, d):
+    def write(self, d, ts=None):
         if self.i:
             self.fh.write(b',\n')
+        if ts is not None:
+            d['timestamp'] = ts
         self.fh.write(orjson.dumps(
-            dict(holoframe.load(d), timestamp=ts), 
-            option=orjson.OPT_NAIVE_UTC | orjson.OPT_SERIALIZE_NUMPY))
+            d, option=orjson.OPT_NAIVE_UTC | orjson.OPT_SERIALIZE_NUMPY))
         self.i += 1
 
 
-class CsvWriter(Writer):
+class CsvWriter(BaseWriter):
     def __init__(self, name, store_dir, **kw):
         super().__init__(**kw)
-        self.fname = os.path.join(store_dir, f'{name}.wav')
+        self.fname = os.path.join(store_dir, f'{name}.csv')
 
     def context(self, header):
         print("Opening csv file:", self.fname)
@@ -181,12 +183,15 @@ class BaseRecorder(Processor):
         elif isinstance(streams, str):
             streams = streams.split('+')
 
+        raw = getattr(self.Writer, 'raw', False)
+        raw_ts = getattr(self.Writer, 'raw_ts', False)
+
         writers = {}
         with contextlib.ExitStack() as stack:
             async with StreamReader(
                     self.api, streams, recording_id=replay, 
                     progress=progress, fullspeed=fullspeed, 
-                    raw=getattr(self.Writer, 'raw', False)) as reader:
+                    raw=raw, raw_ts=raw_ts) as reader:
                 async def _stream():
                     async for sid, t, x in reader:
                         if recording_id and self.recording_id != recording_id:
@@ -196,7 +201,7 @@ class BaseRecorder(Processor):
                             writers[sid] = stack.enter_context(
                                 self.Writer(sid, store_dir, sample=x, t_start=t, **kw))
 
-                        writers[sid].write(t, x)
+                        writers[sid].write(x, t)
 
                 await asyncio.gather(_stream(), reader.watch_replay())
 
