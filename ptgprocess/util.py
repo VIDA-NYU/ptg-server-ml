@@ -58,11 +58,12 @@ class Context:
 
 
 class StreamReader(Context):
-    def __init__(self, api, streams, recording_id=None, raw=False, progress=True, merged=False, **kw):
+    def __init__(self, api, streams, recording_id=None, raw=False, raw_ts=False, progress=True, merged=False, **kw):
         super().__init__(streams=streams, **kw)
         self.api = api
         self.recording_id = recording_id
         self.raw = raw
+        self.raw_ts = raw_ts
         self.merged = merged
         self.progress = progress
 
@@ -103,7 +104,10 @@ class StreamReader(Context):
                 pbar.update()
             else:
                 for sid, t, x in data:
-                    yield (sid, t, x) if self.raw else (sid, parse_epoch_time(t), holoframe.load(x))
+                    yield (
+                        (sid, t, x) if self.raw else 
+                        (sid, t, holoframe.load(x)) if self.raw_ts else
+                        (sid, parse_epoch_time(t), holoframe.load(x)))
                     pbar.update()
 
 
@@ -199,7 +203,7 @@ class ImageOutput:#'avc1', 'mp4v',
 
 
 
-def video_feed(src: str|int=0, fps=None, give_time=True, bad_frames_count=False):
+def video_feed(src: str|int=0, fps=None, give_time=True, bad_frames_count=True):
     cap = cv2.VideoCapture(src)
     if not cap.isOpened():
         raise RuntimeError(f"Could not open video source: {src}")
@@ -227,8 +231,15 @@ def video_feed(src: str|int=0, fps=None, give_time=True, bad_frames_count=False)
         t = i / src_fps
         pbar.set_description(f"t={t:.1f}s")
         yield t if give_time else i, im
+    cap.release()
 
 
+def get_video_info(src):
+    cap = cv2.VideoCapture(src)
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    total = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+    cap.release()
+    return fps, total
 
 
 

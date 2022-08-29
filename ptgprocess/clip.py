@@ -87,9 +87,11 @@ class ActionClip1(ZeroClip):
 
 
 class ActionClip2(ZeroClip):
-    def __init__(self, n_samples=10, checkpoint=ACTION2_CHECKPOINT, **kw):
-        super().__init__(**kw)
-        checkpoint = torch.load(checkpoint, map_location=torch.device(device))
+    def _load_model(self, n_samples=10, checkpoint=None, **kw):
+        super()._load_model(**kw)
+        checkpoint = torch.load(
+            checkpoint or os.path.join(os.path.dirname(__file__), '../models/model_best.pt'),
+            map_location=torch.device(device))
 
         wrapper = nn.Module()
         self.fusion = wrapper.module = visual_prompt(checkpoint['model_state_dict'], n_samples)
