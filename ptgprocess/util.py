@@ -208,8 +208,8 @@ def video_feed(src: str|int=0, fps=None, give_time=True, bad_frames_count=False)
     every = int(src_fps/fps)
     i = 0
     total = cap.get(cv2.CAP_PROP_FRAME_COUNT)
-    pbar = tqdm.tqdm(total=int(total))
     print(f"{total/src_fps:.1f} second video. {total} frames @ {src_fps} fps, reducing to {fps} fps")
+    pbar = tqdm.tqdm(total=int(total))
     while not total or pbar.n < total:
         ret, im = cap.read()
         pbar.update()
