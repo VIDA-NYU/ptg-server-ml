@@ -16,7 +16,7 @@ class Processor:
 
     @maybe_profile
     @async2sync
-    async def __call__(self, *a, continuous=False, **kw):
+    async def run(self, *a, continuous=False, **kw):
         while True:
             try:
                 await self.call_async(*a, **kw)

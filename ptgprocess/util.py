@@ -270,7 +270,7 @@ def draw_boxes(im, boxes, labels):
     return im
 
 
-def draw_text_list(img, texts, i=-1, tl=(10, 50), scale=0.5, space=50, color=(255, 255, 255), thickness=1):
+def draw_text_list(img, texts, i=-1, tl=(10, 50), scale=0.4, space=50, color=(255, 255, 255), thickness=1):
     for i, txt in enumerate(texts, i+1):
         cv2.putText(
             img, txt, 
