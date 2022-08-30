@@ -32,23 +32,23 @@ class ZeroClip(nn.Module):
         self.model, self.preprocess = clip.load(model_name, device=device)
         self.tokenize = clip.tokenize
 
-    def encode_text(self, texts, prompt_format=None, return_texts=False):
+    def encode_text(self, texts, prompt_format=None):
         '''Encode text prompts. Returns formatted prompts and encoded CLIP text embeddings.'''
         toks = self.tokenize([prompt_format.format(x) for x in texts] if prompt_format else texts).to(device)
         z = self.model.encode_text(toks)
-        z /= z.norm(dim=-1, keepdim=True)
-        return (z, texts) if return_texts else z
+        z = F.normalize(z, dim=1)
+        return z
 
     def encode_image(self, image):
         '''Encode image to CLIP embedding.'''
         image = self.preprocess(Image.fromarray(image[...,::-1]))[None].to(device)
         z_image = self.model.encode_image(image)
-        z_image /= z_image.norm(dim=-1, keepdim=True)
+        z_image = F.normalize(z_image, dim=1)
         return z_image
 
     def compare_image_text(self, z_image, z_text):
         '''Compare image and text similarity (not sure why the 100, it's from the CLIP repo).'''
-        return (100 * (z_image @ z_text.T)).softmax(dim=-1)
+        return (100 * z_image @ z_text.T).softmax(dim=-1)
 
 
 
@@ -70,7 +70,9 @@ class ActionClip1(ZeroClip):
 
     def encode_single_image(self, im):
         im = self.preprocess(Image.fromarray(im[:,:,::-1]))[None].to(device)
-        return self.model.encode_image(im)
+        z_image = self.model.encode_image(image)
+        z_image = F.normalize(z_image, dim=1)
+        return z_image
 
     def integrate_time(self, z_image):
         self.q_z_im.append(z_image)
@@ -87,8 +89,8 @@ class ActionClip1(ZeroClip):
 
 
 class ActionClip2(ZeroClip):
-    def _load_model(self, n_samples=10, checkpoint=None, **kw):
-        super()._load_model(**kw)
+    def __init__(self, n_samples=10, checkpoint=None, **kw):
+        super().__init__(**kw)
         checkpoint = torch.load(
             checkpoint or os.path.join(os.path.dirname(__file__), '../models/model_best.pt'),
             map_location=torch.device(device))
@@ -104,19 +106,16 @@ class ActionClip2(ZeroClip):
 
     def encode_single_image(self, im):
         im = self.preprocess(Image.fromarray(im[:,:,::-1]))[None].to(device)
-        return self.model.encode_image(im)
+        z_image = self.model.encode_image(image)
+        z_image = F.normalize(z_image, dim=1)
+        return z_image
 
     def integrate_time(self, z_image):
         self.q_z_im.append(z_image)
         z_image = torch.stack(list(self.q_z_im))
-        print(z_image.shape)
         z_image = self.fusion(z_image)
-        print(z_image.shape)
         z_image = z_image.mean(dim=0, keepdim=True)
-        print(z_image.shape)
         z_image = F.normalize(z_image, dim=1)
-        print(z_image.shape)
-        input()
         return z_image
 
     def encode_image(self, im):
@@ -319,6 +318,13 @@ class ActionClip1Processor(ZeroClipProcessor):
 class ActionClip2Processor(ZeroClipProcessor):
     Model = ActionClip2
 
+
+
+MODELS = {
+    'zero': ZeroClip,
+    'action1': ActionClip1,
+    'action2': ActionClip2,
+}
 
 
 if __name__ == '__main__':
