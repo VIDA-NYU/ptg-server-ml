@@ -84,17 +84,6 @@ from ptgprocess.util import video_feed, ImageOutput, draw_boxes
 #     return img[None]
 
 
-# class TrackLabel:
-#     def __init__(self, track):
-#         self.track = track
-#         self.color = random_color(rgb=True, maximum=1)
-
-#     @property
-#     def label(self):
-#         t = self.track
-#         return f'track {t.track_id}: {t.label}'
-
-
 class Detection2(Detection):
     def __init__(self, tlwh, confidence, feature=None, **meta):
         super().__init__(tlwh, confidence, feature)
@@ -103,9 +92,14 @@ class Detection2(Detection):
 
 class Track2(Track):
     def __init__(self, mean, covariance, track_id, n_init, max_age, feature=None, meta=None):
+        self.color = random_color(rgb=True, maximum=1)
         self.meta = collections.defaultdict(lambda: collections.deque(maxlen=400))
         self._update_meta(meta)
         super().__init__(mean, covariance, track_id, n_init, max_age, feature)
+
+    @property
+    def description(self):
+        return f'track {self.track_id}: {self.label[-1]}'
 
     def _update_meta(self, meta):
         if meta:
@@ -116,6 +110,11 @@ class Track2(Track):
     def update(self, kf, detection):
         self._update_meta(detection.meta)
         super().update(kf, detection)
+
+    def __getattr__(self, k):
+        if k in self.meta:
+            return self.meta[k]
+        raise AttributeError(k)
 
 class Tracker2(Tracker):
     Track = Track2
@@ -157,6 +156,8 @@ def run(src, max_cosine_distance=0.2, nn_budget=None,
             # imout.output(result.ims[0])
             outputs = model(im)
             instances = outputs["instances"].to("cpu")
+            instances = [instances[i] for i in range(len(instances))] # convert to list
+            # print(len(instances))
             # print({k: getattr(v, 'shape', v) for k, v in instances[0]._fields.items()})
 
             # imout.output(model.draw(im, outputs))
@@ -167,7 +168,7 @@ def run(src, max_cosine_distance=0.2, nn_budget=None,
                 Detection2(
                     xyxy2xywh(r.pred_boxes.tensor.numpy())[0], 
                     r.scores[0], 
-                    features=r.clip_features[0],
+                    r.clip_features[0],
                     class_id=r.pred_classes[0],
                     label=model.labels[r.pred_classes[0]],
                     mask=r.pred_masks[0],
@@ -183,8 +184,8 @@ def run(src, max_cosine_distance=0.2, nn_budget=None,
             v = Visualizer(im[:, :, ::-1])
             out = v.overlay_instances(
                 boxes=[t.to_tlbr() for t in tracks],
-                masks=[GenericMask(t.masks[-1], v.output.height, v.output.width) for t in tracks],
-                labels=[t.label for t in tracks],
+                # masks=[GenericMask(t.masks[-1], v.output.height, v.output.width) for t in tracks],
+                labels=[t.description for t in tracks],
                 assigned_colors=[t.color for t in tracks],
                 alpha=0.8
             )
