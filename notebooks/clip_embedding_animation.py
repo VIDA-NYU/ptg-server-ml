@@ -17,19 +17,16 @@ import matplotlib.animation as pltanim
 from adjustText import adjust_text
 
 
-from sklearn.manifold import LocallyLinearEmbedding #Isomap, 
+from sklearn.manifold import LocallyLinearEmbedding, Isomap
     # from sklearn.decomposition import PCA
 
 ANN_ROOT='/opt/Github/epic-kitchens-100-annotations-normalized'
 
 
 def draw_embedding_space(Zt, texts, Zt_path, ax=None):
-    if ax:
-        plt.sca(ax)
-    else:
-        ax = plt.gca()
+    ax = ax or plt.gca()
     
-    plt.scatter(Zt[:,0], Zt[:,1], label='text', c='r', s=50)
+    ax.scatter(Zt[:,0], Zt[:,1], label='text', c='r', s=50)
 
     ax.set_xticks([])
     ax.set_yticks([])
@@ -40,13 +37,13 @@ def draw_embedding_space(Zt, texts, Zt_path, ax=None):
     #     only_move={'points':'y', 'text':'y'}, 
     #     lim=50)
     if Zt_path is not None:
-        plt.plot(Zt_path[:,0], Zt_path[:,1])
+        ax.plot(Zt_path[:,0], Zt_path[:,1])
         # plt.scatter(Zt_path[:,0], Zt_path[:,1])
     
 
 def get_video(video_fname, fps, limit, size=(760, 428)):
     ims = []
-    for t, im in video_feed(video_fname, fps=fps):
+    for t, im in video_feed(video_fname, fps=fps, include_bad_frame=True):
         if limit and t > limit/fps:
             break
         ims.append(cv2.resize(im, size))
@@ -84,16 +81,18 @@ def draw(
         texts = (df if contrast_everything else df_vid)[text_col].unique()
         has_gt = True
 
-    out_dir = f'output/{video_name}-{model.__class__.__name__}-{text_col}'
-    os.makedirs(out_dir, exist_ok=True)
-
     print(f"Vocab ({len(texts)} words):", texts)
 
     Z_text = model.encode_text(texts).detach().numpy()
 
-    # dimreduc = LocallyLinearEmbedding(n_components=2)
-    dimreduc = LocallyLinearEmbedding(n_components=2, n_neighbors=20, method='hessian')
+    dimreduc = LocallyLinearEmbedding(n_components=2)
+    # dimreduc = LocallyLinearEmbedding(n_components=2, n_neighbors=20, method='hessian')
+    # dimreduc = Isomap(n_components=2)
     Zt_text = dimreduc.fit_transform(Z_text)
+
+    out_dir = f'output/{video_name}-{model.__class__.__name__}-{dimreduc.__class__.__name__}-{text_col}{f"-test" if test else ""}'
+    print('writing to', out_dir)
+    os.makedirs(out_dir, exist_ok=True)
 
     plt.figure(figsize=(16, 10))
     draw_embedding_space(Zt_text, texts, None)
