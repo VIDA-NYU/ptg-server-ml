@@ -77,10 +77,10 @@ class Detic(nn.Module):
             try:
                 metadata.thing_classes = list(vocab)
                 metadata.thing_colors = [random_color(rgb=True, maximum=1) for _ in metadata.thing_classes]
-                print(metadata.thing_classes)
-                print(metadata.thing_colors)
             except AttributeError:
                 pass
+
+            self.labels = metadata.thing_classes
 
             self.prompt = prompt = prompt or '{}'
             classifier = self.text_encoder(

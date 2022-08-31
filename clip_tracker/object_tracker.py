@@ -1,3 +1,4 @@
+import collections
 import os
 import tqdm
 
@@ -9,7 +10,8 @@ from torch import nn
 from deep_sort import nn_matching
 from deep_sort.detection import Detection
 from deep_sort.tracker import Tracker
-from detectron2.utils.visualizer import Visualizer, random_color, ColorMode
+from deep_sort.track import Track
+from detectron2.utils.visualizer import Visualizer, random_color, ColorMode, GenericMask
 
 from ptgprocess.detic import Detic
 from ptgprocess.util import video_feed, ImageOutput, draw_boxes
@@ -82,18 +84,47 @@ from ptgprocess.util import video_feed, ImageOutput, draw_boxes
 #     return img[None]
 
 
+# class TrackLabel:
+#     def __init__(self, track):
+#         self.track = track
+#         self.color = random_color(rgb=True, maximum=1)
+
+#     @property
+#     def label(self):
+#         t = self.track
+#         return f'track {t.track_id}: {t.label}'
+
+
+class Detection2(Detection):
+    def __init__(self, tlwh, confidence, feature=None, **meta):
+        super().__init__(tlwh, confidence, feature)
+        self.meta = meta
+
+
+class Track2(Track):
+    def __init__(self, mean, covariance, track_id, n_init, max_age, feature=None, meta=None):
+        self.meta = collections.defaultdict(lambda: collections.deque(maxlen=400))
+        self._update_meta(meta)
+        super().__init__(mean, covariance, track_id, n_init, max_age, feature)
+
+    def _update_meta(self, meta):
+        if meta:
+            smeta=self.meta
+            for k in set(smeta)|set(meta):
+                smeta[k].append(meta.get(k))
+
+    def update(self, kf, detection):
+        self._update_meta(detection.meta)
+        super().update(kf, detection)
+
 class Tracker2(Tracker):
-    def __init__(self, metric, max_iou_distance=0.7, max_age=30, n_init=3):
-        from detectron2.data import MetadataCatalog
-        self.metadata = MetadataCatalog.get(f'tracker{id(self)}')
-        self.metadata.thing_classes = []
-        self.metadata.thing_colors = []
-        super().__init__(metric, max_iou_distance, max_age, n_init)
+    Track = Track2
     def _initiate_track(self, detection):
-        track = super()._initiate_track(detection)
-        self.metadata.thing_classes.append(f'track {self.tracks[-1].track_id}')
-        self.metadata.thing_colors.append(random_color(rgb=True, maximum=1))
-        return track
+        mean, covariance = self.kf.initiate(detection.to_xyah())
+        self.tracks.append(self.Track(
+            mean, covariance, self._next_id, self.n_init, self.max_age,
+            detection.feature, meta=detection.meta))
+        self._next_id += 1
 
 def run(src, max_cosine_distance=0.2, nn_budget=None, 
         out_file=None, fps=10, show=None, **kw):
@@ -118,37 +149,47 @@ def run(src, max_cosine_distance=0.2, nn_budget=None,
     outsize=600
 
     with ImageOutput(out_file, fps, show=show) as imout:
-        for i, im in video_feed(src, fps):
+        for t, im in video_feed(src, fps):
             im = cv2.resize(im, (outsize, int(outsize*im.shape[0]/im.shape[1])))
             # X_im = image_loader(im)
             # xywh, scores, features = model(im)
-            outputs = model(im)
             # result.render()
             # imout.output(result.ims[0])
-            print({k: getattr(v, 'shape', v) for k, v in outputs['instances'][0]._fields.items()})
+            outputs = model(im)
+            instances = outputs["instances"].to("cpu")
+            # print({k: getattr(v, 'shape', v) for k, v in instances[0]._fields.items()})
 
-            imout.output(model.draw(im, outputs))
-
-            # imout.output(draw_boxes(
-            #     im, 
-            #     xywh, 
-            #     [str(s) for s in scores]))
+            # imout.output(model.draw(im, outputs))
 
             # Update tracker.
             tracker.predict()
             tracker.update([
-                Detection(r.pred_boxes.tensor, r.scores[0], r.clip_features[0])
-                for r in outputs['instances']
+                Detection2(
+                    xyxy2xywh(r.pred_boxes.tensor.numpy())[0], 
+                    r.scores[0], 
+                    features=r.clip_features[0],
+                    class_id=r.pred_classes[0],
+                    label=model.labels[r.pred_classes[0]],
+                    mask=r.pred_masks[0],
+                    time=t)
+                for r in instances
             ])
 
             tracks = [
                 track for track in tracker.tracks 
-                if not track.is_confirmed() or track.time_since_update > 0
+                # if track.is_confirmed()
             ]
 
-            v = Visualizer(im[:, :, ::-1], tracker.metadata, instance_mode=ColorMode.SEGMENTATION)
-            out = v.draw_instance_predictions(outputs["instances"].to("cpu"))
+            v = Visualizer(im[:, :, ::-1])
+            out = v.overlay_instances(
+                boxes=[t.to_tlbr() for t in tracks],
+                masks=[GenericMask(t.masks[-1], v.output.height, v.output.width) for t in tracks],
+                labels=[t.label for t in tracks],
+                assigned_colors=[t.color for t in tracks],
+                alpha=0.8
+            )
             im = out.get_image()[:, :, ::-1]
+            imout.output(im)
 
             # # imout.output(im)
             # imout.output(draw_boxes(
@@ -156,6 +197,15 @@ def run(src, max_cosine_distance=0.2, nn_budget=None,
             #     [d.to_tlwh() for d in tracks], 
             #     [str(d.track_id) for d in tracks]))
 
+def xyxy2xywh(xyxy):
+    xyxy[:,2] -= xyxy[:,0]
+    xyxy[:,3] -= xyxy[:,1]
+    return xyxy
+
+def xywh2xyxy(xyxy):
+    xyxy[:,2] += xyxy[:,0]
+    xyxy[:,3] += xyxy[:,1]
+    return xyxy
 
 if __name__ == '__main__':
     import fire
