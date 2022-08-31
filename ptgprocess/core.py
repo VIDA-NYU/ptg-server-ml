@@ -1,7 +1,4 @@
 import asyncio
-import inspect
-import ptgctl
-from ptgctl.util import async2sync
 from .util import maybe_profile
 
 
@@ -9,14 +6,18 @@ from .util import maybe_profile
 class Processor:
     def __init__(self, api=None):
         name = self.__class__.__name__
-        self.api = api or ptgctl.API(username=name, password=name)
+        if api is not False:
+            import ptgctl
+            self.api = api or ptgctl.API(username=name, password=name)
 
     async def call_async(self):
         raise NotImplementedError        
 
     @maybe_profile
-    @async2sync
-    async def run(self, *a, continuous=False, **kw):
+    def run(self, *a, **kw):
+        return asyncio.run(self.run_async(*a, **kw))
+
+    async def run_async(self, *a, continuous=False, **kw):
         while True:
             try:
                 await self.call_async(*a, **kw)

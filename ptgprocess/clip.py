@@ -14,9 +14,6 @@ from torch import nn
 import torch.nn.functional as F
 import clip
 
-import ptgctl
-from ptgctl import holoframe
-from ptgctl.util import parse_epoch_time
 from .core import Processor
 from .util import StreamReader, StreamWriter, ImageOutput, nowstring, draw_text_list
 

@@ -4,18 +4,13 @@ import functools
 from typing import AsyncIterator, cast
 import os
 import time
-import asyncio
-import orjson
 import contextlib
 import datetime
 import tqdm
 
+import cv2
 import numpy as np
-from PIL import Image
 
-import ptgctl
-from ptgctl import holoframe
-from ptgctl.util import parse_epoch_time, async2sync
 
 
 
@@ -93,7 +88,8 @@ class StreamReader(Context):
 
     async def __aiter__(self):
         self.running = True
-        import tqdm
+        from ptgctl import holoframe
+        from ptgctl.util import parse_epoch_time
         pbar = tqdm.tqdm()
         while self.running:
             data = await self.ws.recv_data()
@@ -131,7 +127,6 @@ class StreamWriter(Context):
         await self.ws.send_data(data)
 
 
-import cv2
 class ImageOutput:#'avc1', 'mp4v', 
     prev_im = None
     t_video = 0
@@ -203,13 +198,18 @@ class ImageOutput:#'avc1', 'mp4v',
 
 
 
-def video_feed(src: str|int=0, fps=None, give_time=True, bad_frames_count=True):
+def video_feed(src: str|int=0, fps=None, give_time=True, bad_frames_count=True, include_bad_frame=False):
     cap = cv2.VideoCapture(src)
     if not cap.isOpened():
         raise RuntimeError(f"Could not open video source: {src}")
     src_fps = cap.get(cv2.CAP_PROP_FPS)
     fps = fps or src_fps
     every = int(src_fps/fps)
+
+    width  = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    last_frame = np.zeros((height, width, 3)).astype('uint8')
+
     i = 0
     total = cap.get(cv2.CAP_PROP_FRAME_COUNT)
     print(f"{total/src_fps:.1f} second video. {total} frames @ {src_fps} fps, reducing to {fps} fps")
@@ -222,7 +222,8 @@ def video_feed(src: str|int=0, fps=None, give_time=True, bad_frames_count=True):
 
         if not ret:
             pbar.set_description(f"bad frame: {ret} {im}")
-            continue
+            if not include_bad_frame:
+                continue
 
         if not bad_frames_count: i += 1
 
@@ -230,6 +231,10 @@ def video_feed(src: str|int=0, fps=None, give_time=True, bad_frames_count=True):
             continue
         t = i / src_fps
         pbar.set_description(f"t={t:.1f}s")
+        if im is None:
+            im = last_frame
+        else:
+            last_frame = im
         yield t if give_time else i, im
     cap.release()
 

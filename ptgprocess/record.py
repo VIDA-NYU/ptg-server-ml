@@ -6,10 +6,6 @@ import contextlib
 import datetime
 
 import numpy as np
-from PIL import Image
-
-import ptgctl
-from ptgctl import holoframe
 
 from .core import Processor
 from .util import Context, StreamReader
@@ -35,7 +31,7 @@ class RawWriter(BaseWriter):
             yield self
 
     def write(self, data, ts):
-        self.writer.writestr(id, data)
+        self.writer.writestr(ts, data)
 
 
 class VideoWriter(BaseWriter):
