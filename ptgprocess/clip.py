@@ -39,10 +39,10 @@ class ZeroClip(nn.Module):
         z = F.normalize(z, dim=1)
         return z
 
-    def encode_image(self, image):
+    def encode_image(self, im):
         '''Encode image to CLIP embedding.'''
-        image = self.preprocess(Image.fromarray(image[...,::-1]))[None].to(device)
-        z_image = self.model.encode_image(image)
+        im = self.preprocess(Image.fromarray(im[...,::-1]))[None].to(device)
+        z_image = self.model.encode_image(im)
         z_image = F.normalize(z_image, dim=1)
         return z_image
 
@@ -68,12 +68,6 @@ class ActionClip1(ZeroClip):
     def clear(self):
         self.q_z_im.clear()
 
-    def encode_single_image(self, im):
-        im = self.preprocess(Image.fromarray(im[:,:,::-1]))[None].to(device)
-        z_image = self.model.encode_image(image)
-        z_image = F.normalize(z_image, dim=1)
-        return z_image
-
     def integrate_time(self, z_image):
         self.q_z_im.append(z_image)
         z_image = torch.stack(list(self.q_z_im))
@@ -82,7 +76,7 @@ class ActionClip1(ZeroClip):
         return z_image
 
     def encode_image(self, im):
-        z_image = self.encode_single_image(im)
+        z_image = super().encode_image(im)
         z_image = self.integrate_time(z_image)
         return z_image
 
@@ -104,12 +98,6 @@ class ActionClip2(ZeroClip):
     def clear(self):
         self.q_z_im.clear()
 
-    def encode_single_image(self, im):
-        im = self.preprocess(Image.fromarray(im[:,:,::-1]))[None].to(device)
-        z_image = self.model.encode_image(image)
-        z_image = F.normalize(z_image, dim=1)
-        return z_image
-
     def integrate_time(self, z_image):
         self.q_z_im.append(z_image)
         z_image = torch.stack(list(self.q_z_im))
@@ -119,7 +107,7 @@ class ActionClip2(ZeroClip):
         return z_image
 
     def encode_image(self, im):
-        z_image = self.encode_single_image(im)
+        z_image = super().encode_image(im)
         z_image = self.integrate_time(z_image)
         return z_image
 

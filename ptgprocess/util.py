@@ -263,10 +263,11 @@ def maybe_profile(func, min_time=20):
 
 
 def draw_boxes(im, boxes, labels):
-    for xy, label in zip(boxes, labels):
+    for xy, label in zip(boxes, labels if labels is not None else ['']*len(boxes)):
         xy = list(map(int, xy))
         im = cv2.rectangle(im, xy[:2], xy[2:4], (0,255,0), 2)
-        im = cv2.putText(im, label, xy[:2], cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+        if label:
+            im = cv2.putText(im, label, xy[:2], cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
     return im
 
 
