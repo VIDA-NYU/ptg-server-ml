@@ -75,10 +75,12 @@ class StreamReader(Context):
                 streams = [f'{self.prefix}:{s}' for s in streams]
                 async with self.api.data_pull_connect('+'.join(streams), last=last, timeout=timeout) as self.ws:
                     yield self
+            self.pbar = None
             return
 
         async with self.api.data_pull_connect('+'.join(streams), last=last) as self.ws:
             yield self
+        self.pbar = None
 
 
     async def watch_replay(self, done=None):
@@ -92,7 +94,7 @@ class StreamReader(Context):
         self.running = True
         from ptgctl import holoframe
         from ptgctl.util import parse_epoch_time
-        pbar = tqdm.tqdm()
+        self.pbar = pbar = tqdm.tqdm()
         while self.running:
             data = await self.ws.recv_data()
             if self.prefix:

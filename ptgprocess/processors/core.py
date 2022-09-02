@@ -1,5 +1,5 @@
 import asyncio
-from .util import maybe_profile
+from ..util import maybe_profile
 
 
 

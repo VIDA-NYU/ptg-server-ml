@@ -15,7 +15,7 @@ services:
       - ptg
     volumes:
       - ${VOLUMES}/recordings/raw:/src/recordings
-    command: python -m ptgprocess.record raw run
+    command: python -m ptgprocess.processors.record raw run
 
   video_recorder:
     image: ptgprocess
@@ -25,7 +25,7 @@ services:
       - ptg
     volumes:
       - ${VOLUMES}/recordings/post:/src/recordings
-    command: python -m ptgprocess.record video run
+    command: python -m ptgprocess.processors.record video run
 
   audio_recorder:
     image: ptgprocess
@@ -35,7 +35,7 @@ services:
       - ptg
     volumes:
       - ${VOLUMES}/recordings/post:/src/recordings
-    command: python -m ptgprocess.record audio run
+    command: python -m ptgprocess.processors.record audio run
 
   json_recorder:
     image: ptgprocess
@@ -45,7 +45,7 @@ services:
       - ptg
     volumes:
       - ${VOLUMES}/recordings/post:/src/recordings
-    command: python -m ptgprocess.record json run
+    command: python -m ptgprocess.processors.record json run
 
 
 
@@ -57,7 +57,7 @@ services:
     networks:
       - ptg
     restart: unless-stopped
-    command: python -m ptgprocess.clip action2 run
+    command: python -m ptgprocess.processors.clip action2 run
 
   yolo3d:
     image: ptgprocess
@@ -65,7 +65,7 @@ services:
     networks:
       - ptg
     restart: unless-stopped
-    command: python -m ptgprocess.yolo3d run
+    command: python -m ptgprocess.processors.yolo3d run
 
 
   # Machine Learning for Streams
