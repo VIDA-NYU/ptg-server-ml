@@ -49,7 +49,7 @@ class Yolo3D(Processor):
             out_file = os.path.join(store_dir or self.STORE_DIR, replay or nowstring(), f'{self.output_prefix}.mp4')
 
         async with StreamReader(self.api, in_sids, recording_id=replay, fullspeed=fullspeed, merged=True) as reader, \
-                   StreamWriter(self.api, out_sids, test=True) as writer, \
+                   StreamWriter(self.api, out_sids, test=test) as writer, \
                    ImageOutput(out_file, fps, fixed_fps=True, show=show) as imout:
             async def _stream():
                 data = holoframe.load_all(self.api.data('depthltCal'))
@@ -95,18 +95,14 @@ class Yolo3D(Processor):
                     xyz_top, xyz_center, dist = pts3d.transform_center_top(xyxy)
                     valid = dist < self.max_depth_dist  # make sure the points aren't too far
 
-                    if test:
-                        for l, c, xc, xt in zip(labels, confs, xyz_center, xyz_top):
-                            tqdm.tqdm.write(f'{l} {c} {xc} {xt}')
-                    else:
-                        await writer.write([
-                            self.dump(
-                                self.image_box_keys, 
-                                [xywhn, confs, class_ids, labels]),
-                            self.dump(
-                                self.world_box_keys, 
-                                [x[valid] for x in [xyz_center, xyz_top, confs, class_ids, labels]]),
-                        ], mts)
+                    await writer.write([
+                        self.dump(
+                            self.image_box_keys, 
+                            [xywhn, confs, class_ids, labels]),
+                        self.dump(
+                            self.world_box_keys, 
+                            [x[valid] for x in [xyz_center, xyz_top, confs, class_ids, labels]]),
+                    ])
                     if imout.active:
                         imout.output(draw_boxes(cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR), xyxy, [
                             f'{l} {c:.0%} [{x:.0f},{y:.0f},{z:.0f}]' 
@@ -122,6 +118,4 @@ class Yolo3D(Processor):
 
 if __name__ == '__main__':
     import fire
-    fire.Fire({
-        '3d': Yolo3D,
-    })
+    fire.Fire(Yolo3D)
