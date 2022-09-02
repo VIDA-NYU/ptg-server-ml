@@ -16,9 +16,10 @@ from .util import StreamReader, StreamWriter, ImageOutput, nowstring, draw_boxes
 
 class Yolo3D(Processor):
     output_prefix = 'yolo3d'
-    image_box_keys = ['xyxy', 'confidence', 'class_id']
-    world_box_keys = ['xyz_tl', 'xyz_br', 'xyz_tr', 'xyz_bl', 'xyzc', 'confidence', 'class_id']
+    image_box_keys = ['xywhn', 'confidence', 'class_id']
+    world_box_keys = ['xyz_center', 'xyz_top', 'confidence', 'class_id']
     min_dist_secs = 1
+    max_depth_dist = 7
     STORE_DIR = 'post'
 
     def __init__(self):
@@ -33,7 +34,7 @@ class Yolo3D(Processor):
 
         super().__init__()
 
-    async def call_async(self, replay=None, fullspeed=None, prefix=None, out_file=None, fps=10, store_dir=None, **kw):
+    async def call_async(self, replay=None, fullspeed=None, prefix=None, out_file=None, fps=10, show=False, store_dir=None, test=False, **kw):
         import cv2
         from ptgctl.pt3d import Points3D
         self.data = {}
@@ -43,16 +44,15 @@ class Yolo3D(Processor):
         out_prefix = f'{prefix}{self.output_prefix}'
         in_sids = ['main', 'depthlt', 'depthltCal']
         out_sids = [f'{out_prefix}:image', f'{out_prefix}:world']
+
         if out_file is True:
             out_file = os.path.join(store_dir or self.STORE_DIR, replay or nowstring(), f'{self.output_prefix}.mp4')
 
         async with StreamReader(self.api, in_sids, recording_id=replay, fullspeed=fullspeed, merged=True) as reader, \
                    StreamWriter(self.api, out_sids, test=True) as writer, \
-                   ImageOutput(out_file, fps, fixed_fps=True, show=True) as imout:
+                   ImageOutput(out_file, fps, fixed_fps=True, show=show) as imout:
             async def _stream():
-                data = holoframe.load_all(self.api.data(f'{replay if replay else ""}:depthltCal'))
-                if replay:
-                    data = {k[len(replay)+1:]:v for k, v in data.items()}
+                data = holoframe.load_all(self.api.data('depthltCal'))
                 self.data.update(data)
 
                 async for data in reader:
@@ -78,24 +78,40 @@ class Yolo3D(Processor):
                             [main['focalX'], main['focalY']], [main['principalX'], main['principalY']])
                     except KeyError as e:
                         tqdm.tqdm.write(f'KeyError: {e} {set(self.data)}')
+                        await asyncio.sleep(0.1)
                         continue
-
-                    xyxy = self.model(rgb).xyxy[0].numpy()
-                    confs = xyxy[:, 4]
-                    class_ids = xyxy[:, 5].astype(int)
+                    
+                    # compute model
+                    results = self.model(rgb)
+                    # 2d results
+                    xywhn = results.xywhn[0].numpy()
+                    confs = xywhn[:, 4]
+                    class_ids = xywhn[:, 5].astype(int)
                     labels = self.labels[class_ids]
-                    xyxy = xyxy[:, :4]
-                    xyz_tl, xyz_br, xyz_tr, xyz_bl, xyzc, dist = pts3d.transform_box(xyxy[:, :4])
-                    valid = dist < 5  # make sure the points aren't too far
 
-                    # await writer.write([
-                    #     self.dump(self.image_box_keys, [x[valid] for x in [xyxy, confs, class_ids, labels]]),
-                    #     self.dump(self.world_box_keys, [x[valid] for x in [xyz_tl, xyz_br, xyz_tr, xyz_bl, xyzc, confs, class_ids, labels]]),
-                    # ])
-                    imout.output(draw_boxes(cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR), xyxy, [
-                        f'{l} {c:.0%} [{x:.0f},{y:.0f},{z:.0f}]' 
-                        for l, c, (x,y,z) in zip(labels[valid], confs[valid], xyzc[valid])
-                    ]), parse_epoch_time(mts))
+                    # 3d results
+                    xyxy = results.xyxy[0].numpy()
+                    xyxy = xyxy[:, :4]
+                    xyz_top, xyz_center, dist = pts3d.transform_center_top(xyxy)
+                    valid = dist < self.max_depth_dist  # make sure the points aren't too far
+
+                    if test:
+                        for l, c, xc, xt in zip(labels, confs, xyz_center, xyz_top):
+                            tqdm.tqdm.write(f'{l} {c} {xc} {xt}')
+                    else:
+                        await writer.write([
+                            self.dump(
+                                self.image_box_keys, 
+                                [xywhn, confs, class_ids, labels]),
+                            self.dump(
+                                self.world_box_keys, 
+                                [x[valid] for x in [xyz_center, xyz_top, confs, class_ids, labels]]),
+                        ], mts)
+                    if imout.active:
+                        imout.output(draw_boxes(cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR), xyxy, [
+                            f'{l} {c:.0%} [{x:.0f},{y:.0f},{z:.0f}]' 
+                            for l, c, (x,y,z) in zip(labels[valid], confs[valid], xyz_center[valid])
+                        ]), parse_epoch_time(mts))
 
             await asyncio.gather(_stream(), reader.watch_replay())
 

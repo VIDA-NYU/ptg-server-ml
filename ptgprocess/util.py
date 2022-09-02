@@ -53,10 +53,11 @@ class Context:
 
 
 class StreamReader(Context):
-    def __init__(self, api, streams, recording_id=None, raw=False, raw_ts=False, progress=True, merged=False, **kw):
+    def __init__(self, api, streams, recording_id=None, prefix=None, raw=False, raw_ts=False, progress=True, merged=False, **kw):
         super().__init__(streams=streams, **kw)
         self.api = api
         self.recording_id = recording_id
+        self.prefix = prefix or (f'{recording_id}:' if recording_id else None)
         self.raw = raw
         self.raw_ts = raw_ts
         self.merged = merged
@@ -69,13 +70,14 @@ class StreamReader(Context):
             async with self.api.recordings.replay_connect(
                     rid, '+'.join(streams), 
                     fullspeed=fullspeed, 
-                    prefix=f'{rid}:'
+                    prefix=f'{self.prefix}:'
             ) as self.replayer:
-                async with self.api.data_pull_connect('+'.join(f'{rid}:{s}' for s in streams), last=last, timeout=timeout) as self.ws:
+                streams = [f'{self.prefix}:{s}' for s in streams]
+                async with self.api.data_pull_connect('+'.join(streams), last=last, timeout=timeout) as self.ws:
                     yield self
             return
 
-        async with self.api.data_pull_connect('+'.join(streams)) as self.ws:
+        async with self.api.data_pull_connect('+'.join(streams), last=last, timeout=timeout) as self.ws:
             yield self
 
 
@@ -93,8 +95,8 @@ class StreamReader(Context):
         pbar = tqdm.tqdm()
         while self.running:
             data = await self.ws.recv_data()
-            if self.recording_id:
-                data = [(sid[len(self.recording_id)+1:], t, x) for (sid, t, x) in data]
+            if self.prefix:
+                data = [(sid[len(self.prefix)+1:], t, x) for (sid, t, x) in data]
             if self.merged:
                 yield holoframe.load_all(data)
                 pbar.update()
