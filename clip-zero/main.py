@@ -1,9 +1,11 @@
 import os
 import json
 import torch
+from  torch import nn
 import clip
 import asyncio
 from PIL import Image
+import redis
 import redis.asyncio as aioredis
 import ptgctl
 from ptgctl import holoframe
@@ -42,6 +44,7 @@ class App:
 
     async def _wait_for_active(self, initial_id=None, delay=1):
         '''Wait for an active or changed recipe ID from redis.'''
+        print("initial ID:", initial_id, 'watching for change')
         while True:
             self.current_id = rec_id = await self._get_id()
             if rec_id != initial_id:
@@ -52,14 +55,19 @@ class App:
         '''Run the main loop asynchronously.'''
         if active_id:  # force a recipe ID
             self.current_id = active_id
+            print("explicitly set active recipe:", self.current_id)
             return await self.run_while_active(active_id, **kw)
         while True:
             try:
-                # print('waiting for recipe')
+                print('waiting for recipe')
                 active_id = await self._wait_for_active()
+                print("active recipe:", active_id, '...')
                 await asyncio.gather(
                     self._wait_for_active(active_id),
                     self.run_while_active(active_id, **kw))
+            except redis.exceptions.ConnectionError:
+                print("redis connection error.")
+                await asyncio.sleep(5)
             except Exception:
                 import traceback
                 traceback.print_exc()
@@ -79,7 +87,7 @@ class App:
         #     return [sid, d]
         return await self.redis.xread({sid: last}, count=count, block=block)
 
-    test = True
+    test = False
     async def upload(self, streams, ts='*', wrap_with_data_key=True):
         '''Upload results to redis'''
         if wrap_with_data_key:
@@ -118,12 +126,16 @@ class App:
             await app.run_async(recipe_id, last=last)
 
 
+CHECKPOINT = os.path.join(os.path.dirname(__file__), 'models/epoch=2-step=99021.ckpt')
+
+device or ("cuda" if torch.cuda.is_available() else "cpu")
+
 class ClipApp(App):
     tools_prompt = 'a photo of a {}'
     ingredients_prompt = 'a photo of a {}'
     instructions_prompt = '{}'
 
-    def __init__(self, model_name="ViT-B/32", input_sid='main', out_prefix='clip:basic-zero-shot', **kw):
+    def __init__(self, model_name="ViT-B/32", input_sid='main', out_prefix='clip:basic-zero-shot', checkpoint=CHECKPOINT, nframes=10, **kw):
         '''A Basic Clip Zero-Shot Model
         
         Arguments:
@@ -134,8 +146,18 @@ class ClipApp(App):
         '''
         super().__init__(**kw)
         self.model, self.preprocess = clip.load(model_name, device=device)
+        self.model.eval()
+        if checkpoint:
+            wrapper=nn.Module()
+            wrapper.model=self.model
+            state_dict = torch.load(checkpoint, map_location=device)['state_dict']
+            wrapper.load_state_dict({
+                k: v for k, v in state_dict.items()
+                if not k.startswith('teacher.') and k not in {'sink_temp'}
+            })
         self.input_sid = input_sid
         self.out_prefix = out_prefix
+        self.Zh_image = collections.deque(maxlen=nframes)
 
     async def run_while_active(self, recipe_id, last='$'):
         '''This is the main model code. 
@@ -144,9 +166,10 @@ class ClipApp(App):
         # load the recipe from the api
         recipe = self.api.recipes.get(recipe_id)
         # encode the tools, ingredients, and instructions using CLIP's text encoder.
-        tools, z_tools = self.encode_text(recipe['tools'], self.tools_prompt)
-        ingredients, z_ingredients = self.encode_text(recipe['ingredients'], self.ingredients_prompt)
-        instructions, z_instructions = self.encode_text(recipe['instructions'], self.instructions_prompt)
+        #tools, z_tools = self.encode_text(recipe['tools'], self.tools_prompt)
+        #ingredients, z_ingredients = self.encode_text(recipe['ingredients'], self.ingredients_prompt)
+        #instructions, z_instructions = self.encode_text(recipe['instructions'], self.instructions_prompt)
+        steps, z_steps = self.encode_text(recipe['steps'], self.tools_prompt)
         
         # sid is the camera stream name
         sid = self.input_sid
@@ -166,15 +189,17 @@ class ClipApp(App):
                     # encode the image
                     z_image = self.encode_image(holoframe.load(data[b'd'])['image'])
                     # compare the image to text queries
-                    tools_similarity = self.compare_image_text(z_image, z_tools)[0]
-                    ingredients_similarity = self.compare_image_text(z_image, z_ingredients)[0]
-                    instructions_similarity = self.compare_image_text(z_image, z_instructions)[0]
+                    #tools_similarity = self.compare_image_text(z_image, z_tools)[0]
+                    #ingredients_similarity = self.compare_image_text(z_image, z_ingredients)[0]
+                    #instructions_similarity = self.compare_image_text(z_image, z_instructions)[0]
+                    steps_similarity = self.compare_image_text(z_image, z_steps)[0]
 
                     # upload results to the server
                     await self.upload({
-                        f'{self.out_prefix}:tools': self._bundle(tools, tools_similarity),
-                        f'{self.out_prefix}:ingredients': self._bundle(ingredients, ingredients_similarity),
-                        f'{self.out_prefix}:instructions': self._bundle(instructions, instructions_similarity),
+                        #f'{self.out_prefix}:tools': self._bundle(tools, tools_similarity),
+                        #f'{self.out_prefix}:ingredients': self._bundle(ingredients, ingredients_similarity),
+                        #f'{self.out_prefix}:instructions': self._bundle(instructions, instructions_similarity),
+                        f'{self.out_prefix}:steps': self._bundle(steps, steps_similarity),
                     }, ts)
     
     def encode_text(self, texts, prompt_format=None):
@@ -192,7 +217,8 @@ class ClipApp(App):
         image = self.preprocess(image).unsqueeze(0).to(device)
         z_image = self.model.encode_image(image)
         z_image /= z_image.norm(dim=-1, keepdim=True)
-        return z_image
+        self.Zh_image.append(z_image)
+        return torch.stack(tuple(self.Zh_image)).mean(dim=0)
 
     def compare_image_text(self, z_image, z_text):
         '''Compare image and text similarity (not sure why the 100, it's from the CLIP repo).'''
@@ -201,6 +227,7 @@ class ClipApp(App):
     def _bundle(self, text, similarity):
         '''Prepare text and similarity to be uploaded.'''
         return dict(zip(text, similarity.tolist()))
+
 
 
 import collections

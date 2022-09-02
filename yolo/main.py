@@ -37,7 +37,11 @@ class App:
         device = torch.device(device_type)
         self.model = torch.hub.load('ultralytics/yolov5', 'yolov5s', pretrained=True).to(device)
         self.model.amp = False
-        self.labels = np.asarray(self.model.names)
+        labels = self.model.names
+        print(labels)
+        labels = list(labels)
+        self.labels = np.asarray(labels)
+        print('labels:', len(self.labels), self.labels)
 
     def calibrate(self):
         data = self.api.data('depthltCal')
@@ -75,7 +79,7 @@ class App:
     async def run_async(self, **kw):
         streams = ['main', 'depthlt']
         async with self.api.data_pull_connect('+'.join(streams), time_sync_id='main', **kw) as wsr:
-            async with self.api.data_push_connect('yolo3d:v1', **kw) as wsw:
+            async with self.api.data_push_connect('yolo3d:v1', **kw) as wsw, self.api.data_push_connect('yolo:v1', **kw) as wsw:
                 while True:
                     #print('waiting for data')
                     data = await wsr.recv_data()
@@ -99,6 +103,7 @@ class App:
                             self.calibrate()
                     except Exception as e:
                         await report_error(f"problem retrieving data - {type(e)}: {e}", 1)
+                        await asyncio.sleep(0.2)
                         continue
 
                     try:
@@ -111,12 +116,38 @@ class App:
                         print(f'{time.time() - ptgctl.util.parse_epoch_time(self.data["main"]["timestamp"]):.3g} seconds behind')
                         
                         results = self.process_data(rgb, pts3d)
-                        output = orjson.dumps(self.as_json(results), option=orjson.OPT_NAIVE_UTC | orjson.OPT_SERIALIZE_NUMPY)
+                        results = self.model(rgb)
+                        #output = orjson.dumps(self.as_3d_json(results), option=orjson.OPT_NAIVE_UTC | orjson.OPT_SERIALIZE_NUMPY)
+                    except Exception:
+                        await report_error("problem processing data", 0.1)
+                        continue
+                    
+                    await wsw.send_data(orjson.dumps(
+                        self.as_json(results, self.columns_2d), 
+                        option=orjson.OPT_NAIVE_UTC | orjson.OPT_SERIALIZE_NUMPY))
+                    
+                    try:
+                        xyxy = results.xyxy[0].numpy()
+                        meta = xyxy[:, 4:]
+
+                        (
+                            xyz_tl_world, xyz_br_world,
+                            xyz_tr_world, xyz_bl_world,
+                            xyzc_world, dist,
+                        ) = pts3d.transform_box(xyxy[:, :4])
+                        valid = dist < 5  # make sure the points aren't too far
+
+                        xs = [xyz_tl_world, xyz_br_world, xyz_tr_world, xyz_bl_world, xyzc_world, meta]
+                        xs = [x[valid] for x in xs]
+                        xs = np.concatenate(xs, axis=1)
+                        #output = orjson.dumps(self.as_json(results), option=orjson.OPT_NAIVE_UTC | orjson.OPT_SERIALIZE_NUMPY)
 
                     except Exception:
                         await report_error("problem processing data", 0.1)
                         continue
-                    await wsw.send_data(output)
+                    await wsw.send_data(orjson.dumps(
+                        self.as_json(xs, self.columns_3d), 
+                        option=orjson.OPT_NAIVE_UTC | orjson.OPT_SERIALIZE_NUMPY))
                     #print(output)
 
     def get_pts3d(self):
@@ -178,9 +209,9 @@ class App:
         'x_bl', 'y_bl', 'z_bl', 
         'xc', 'yc', 'zc', 
         'confidence', 'class_id']
-    def as_json(self, results):
+    def as_json(self, results, columns):
         return [
-            dict(zip(self.columns, d), label=self.labels[int(d[-1])])
+            dict(zip(columns, d), label=self.labels[int(d[-1])])
             for d in results
         ]
 
