@@ -88,6 +88,14 @@ services:
   #   restart: unless-stopped
   #   logging: *lokilogging
 
+  reasoning:
+    build: ./reasoning
+    container_name: reasoning
+    networks:
+      - ptg
+    restart: unless-stopped
+    logging: *lokilogging
+
 
 # connect these containers to the server containers
 networks:
