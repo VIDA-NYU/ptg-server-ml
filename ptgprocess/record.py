@@ -27,7 +27,7 @@ class RawWriter(BaseWriter):
     def context(self, sample, t_start):
         import zipfile
         print("Opening zip file:", self.fname)
-        with zipfile.ZipFile(self.fname, 'w', zipfile.ZIP_STORED, False) as self.writer:
+        with zipfile.ZipFile(self.fname, 'a', zipfile.ZIP_STORED, False) as self.writer:
             yield self
 
     def write(self, data, ts):
@@ -168,7 +168,35 @@ class BaseRecorder(Processor):
 
     recording_id = None
 
-    async def call_async(self, streams=None, recording_id=None, replay=None, fullspeed=None, progress=True, store_dir=None, **kw):
+    async def call_async(self, recording_id=None, *a, **kw):
+        if recording_id:
+            return await self._call_async(None, recording_id, *a, **kw)
+        recording_id = self.api.recordings.current()
+        if not recording_id:
+            print("waiting for recording to be activated")
+            self.recording_id = recording_id = await self._watch_recording_id(None, recording_id)
+        print("Starting recording:", recording_id)
+        done = asyncio.Event()
+        return await asyncio.gather(
+            self._call_async(done, *a, recording_id=recording_id, **kw),
+            self._watch_recording_id(done, recording_id)
+        )
+
+    async def _watch_recording_id(self, done, recording_id):
+        loop = asyncio.get_event_loop()
+        while done is None or not done.is_set():
+            new_recording_id, _ = await asyncio.gather(
+                loop.run_in_executor(None, self.api.recordings.current),
+                asyncio.sleep(3)
+            )
+            self.recording_id = new_recording_id
+            if new_recording_id != recording_id:
+                # print(self.recording_id, '!=', recording_id)
+                if done:
+                    done.set()
+                return new_recording_id
+
+    async def _call_async(self, done, recording_id=None, streams=None, replay=None, fullspeed=None, progress=True, store_dir=None, **kw):
         store_dir = os.path.join(store_dir or self.STORE_DIR, recording_id or self.new_recording_id())
         os.makedirs(store_dir, exist_ok=True)
 
@@ -190,7 +218,10 @@ class BaseRecorder(Processor):
                     raw=raw, raw_ts=raw_ts) as reader:
                 async def _stream():
                     async for sid, t, x in reader:
+                        if done is not None and done.is_set():
+                            break
                         if recording_id and self.recording_id != recording_id:
+                            # print(self.recording_id, '!=', recording_id)
                             break
 
                         if sid not in writers:
@@ -198,8 +229,9 @@ class BaseRecorder(Processor):
                                 self.Writer(sid, store_dir, sample=x, t_start=t, **kw))
 
                         writers[sid].write(x, t)
+                    done.set()
 
-                await asyncio.gather(_stream(), reader.watch_replay())
+                await asyncio.gather(_stream(), reader.watch_replay(done))
 
 class RawRecorder(BaseRecorder):
     Writer = RawWriter

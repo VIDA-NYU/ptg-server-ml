@@ -229,26 +229,28 @@ class ZeroClipProcessor(Processor):
     Model = ZeroClip
 
     async def call_async(self, recipe_id=None, *a, **kw):
-        # if recipe_id:
-        return await self._call_async(recipe_id, *a, **kw)
-    #     recipe_id = self.api.sessions.current_recipe()
-    #     if not recipe_id:
-    #         print("waiting for recipe to be activated")
-    #         recipe_id = await self._watch_recipe_id(recipe_id)
-    #     return await asyncio.gather(
-    #         self._call_async(recipe_id, *a, **kw),
-    #         self._watch_recipe_id(recipe_id)
-    #     )
+        if recipe_id:
+            return await self._call_async(recipe_id, *a, **kw)
 
-    # async def _watch_recipe_id(self, recipe_id):
-    #     loop = asyncio.get_event_loop()
-    #     while True:
-    #         new_recipe_id, _ = await asyncio.gather(
-    #             loop.run_in_executor(None, self.api.sessions.current_recipe),
-    #             asyncio.sleep(3)
-    #         )
-    #         if new_recipe_id != recipe_id:
-    #             return new_recipe_id
+        recipe_id = self.api.sessions.current_recipe()
+        if not recipe_id:
+            print("waiting for recipe to be activated")
+            recipe_id = await self._watch_recipe_id(recipe_id)
+        print("Starting recipe:", recipe_id)
+        return await asyncio.gather(
+            self._call_async(recipe_id, *a, **kw),
+            self._watch_recipe_id(recipe_id)
+        )
+
+    async def _watch_recipe_id(self, recipe_id):
+        loop = asyncio.get_event_loop()
+        while True:
+            new_recipe_id, _ = await asyncio.gather(
+                loop.run_in_executor(None, self.api.sessions.current_recipe),
+                asyncio.sleep(3)
+            )
+            if new_recipe_id != recipe_id:
+                return new_recipe_id
 
     async def _call_async(self, recipe_id, replay=None, fullspeed=None, out_file=None, fps=5, show=True, store_dir=None, **kw):
         if not hasattr(self, 'model'):

@@ -8,7 +8,7 @@ class Processor:
         name = self.__class__.__name__
         if api is not False:
             import ptgctl
-            self.api = api or ptgctl.API(username=name, password=name)
+            self.api = api or ptgctl.API(username=name, password=name, should_log=False)
 
     async def call_async(self):
         raise NotImplementedError        

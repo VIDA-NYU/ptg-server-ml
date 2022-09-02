@@ -63,7 +63,7 @@ class StreamReader(Context):
         self.merged = merged
         self.progress = progress
 
-    async def acontext(self, streams, fullspeed=None, last=None, timeout=10000) -> 'AsyncIterator[StreamReader]':
+    async def acontext(self, streams, fullspeed=None, last=None, timeout=5000) -> 'AsyncIterator[StreamReader]':
         self.replayer = None
         rid = self.recording_id
         if rid:
@@ -77,14 +77,14 @@ class StreamReader(Context):
                     yield self
             return
 
-        async with self.api.data_pull_connect('+'.join(streams), last=last, timeout=timeout) as self.ws:
+        async with self.api.data_pull_connect('+'.join(streams), last=last) as self.ws:
             yield self
 
 
-    async def watch_replay(self):
+    async def watch_replay(self, done=None):
         if self.replayer is not None:
             try:
-                await self.replayer.done()
+                await self.replayer.done(done)
             finally:
                 self.running = False
 
