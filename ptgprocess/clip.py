@@ -87,7 +87,7 @@ class ActionClip2(ZeroClip):
             map_location=torch.device(device))
 
         wrapper = nn.Module()
-        self.fusion = wrapper.module = visual_prompt(checkpoint['model_state_dict'], n_samples)
+        self.fusion = wrapper.module = visual_prompt(checkpoint['model_state_dict'], n_samples).to(device)
         self.model.load_state_dict(checkpoint['model_state_dict'])
         wrapper.load_state_dict(checkpoint['fusion_model_state_dict'])
         self.q_z_im = collections.deque(maxlen=n_samples)

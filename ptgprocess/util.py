@@ -196,21 +196,86 @@ class ImageOutput:#'avc1', 'mp4v',
             raise StopIteration
 
 
+class VideoInput:
+    def __init__(self, src, fps=None, size=None, give_time=True, bad_frames_count=True, include_bad_frame=False):
+        self.src = src
+        self.dest_fps = fps
+        self.size = size
+        self.bad_frames_count = bad_frames_count
+        self.include_bad_frame = include_bad_frame
+        self.give_time = give_time
+
+    def __enter__(self):
+        self.cap = cap = cv2.VideoCapture(self.src)
+        if not cap.isOpened():
+            raise RuntimeError(f"Could not open video source: {self.src}")
+        self.src_fps = src_fps = cap.get(cv2.CAP_PROP_FPS)
+        self.every = int(src_fps/(self.dest_fps or src_fps))
+        size = self.size or (
+            int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)),
+            int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)))
+        self.frame = np.zeros(tuple(size)+(3,)).astype('uint8')
+
+        self.total = total = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+        print(f"{total/src_fps:.1f} second video. {total} frames @ {self.src_fps} fps,",
+              f"reducing to {self.dest_fps} fps" if self.dest_fps else '')
+        self.pbar = tqdm.tqdm(total=int(total))
+
+    def __exit__(self, *a):
+        self.cap.release()
+
+    #def read_all(self, limit=None):
+
+    def read_all(self, limit=None):
+        ims = []
+        with self:
+            for t, im in self:
+                if limit and t > limit/self.dest_fps:
+                    break
+                ims.append(im)
+        return np.stack(ims)
+
+    def __iter__(self):
+        i=0
+        while not self.total or self.pbar.n < self.total:
+            ret, im = self.cap.read()
+            self.pbar.update()
+
+            if self.bad_frames_count: i += 1
+
+            if not ret:
+                self.pbar.set_description(f"bad frame: {ret} {im}")
+                if not self.include_bad_frame:
+                    continue
+                im = self.frame
+            self.frame = im
+
+            if not self.bad_frames_count: i += 1
+
+            if i%self.every:
+                continue
+            if self.size:
+                im = cv2.resize(im, self.size)
+
+            t = i / self.src_fps
+            self.pbar.set_description(f"t={t:.1f}s")
+            yield t if self.give_time else i, im
+
 
 
 def video_feed(src: str|int=0, fps=None, give_time=True, bad_frames_count=True, include_bad_frame=False):
     cap = cv2.VideoCapture(src)
     if not cap.isOpened():
         raise RuntimeError(f"Could not open video source: {src}")
-    src_fps = cap.get(cv2.CAP_PROP_FPS)
+    src_fps = round(cap.get(cv2.CAP_PROP_FPS))
     fps = fps or src_fps
-    every = int(src_fps/fps)
+    every = int(round(src_fps/fps))
 
     width  = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     last_frame = np.zeros((height, width, 3)).astype('uint8')
 
-    i = 0
+    i = -1
     total = cap.get(cv2.CAP_PROP_FRAME_COUNT)
     print(f"{total/src_fps:.1f} second video. {total} frames @ {src_fps} fps, reducing to {fps} fps")
     pbar = tqdm.tqdm(total=int(total))
