@@ -24,6 +24,7 @@ RUN gdown https://drive.google.com/uc?id=1RsXbLrIubPTAbgP3NEAB73LMcAKDV3oE -O /s
 
 # Download extra files
 RUN python -m spacy download en_core_web_lg
+RUN python -c "import nltk;nltk.download('punkt')"
 
 ADD main.py .
 CMD ["main.py", "run" ]
