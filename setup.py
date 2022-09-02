@@ -4,7 +4,11 @@ IMAGE_DEPS = ['Pillow', 'opencv-python']
 deps = {
     'image': IMAGE_DEPS,
     'audio': ['sounddevice', 'soundfile'],
-    'clip': IMAGE_DEPS+['torch', 'clip @ git+ssh://git@github.com/openai/CLIP@main#egg=clip'],
+    'clip': IMAGE_DEPS+[
+        'torch', 
+        #'clip @ git+ssh://git@github.com/openai/CLIP@main#egg=clip'
+        'clip @ git+https://github.com/openai/CLIP.git@main#egg=clip',
+    ],
     'yolo': IMAGE_DEPS+['torch'],
 }
 

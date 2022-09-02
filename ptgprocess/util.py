@@ -63,8 +63,8 @@ class StreamReader(Context):
         self.merged = merged
         self.progress = progress
 
-    async def acontext(self, streams, fullspeed=None, last=None, timeout=5000) -> 'AsyncIterator[StreamReader]':
-        self.replayer = None
+    async def acontext(self, streams, fullspeed=None, last=None, replay_pull_timeout=5000) -> 'AsyncIterator[StreamReader]':
+        self.replayer = self._replay_task = None
         rid = self.recording_id
         if rid:
             async with self.api.recordings.replay_connect(
@@ -72,9 +72,14 @@ class StreamReader(Context):
                     fullspeed=fullspeed, 
                     prefix=f'{self.prefix}:'
             ) as self.replayer:
+                self._replay_task = asyncio.create_task(self.watch_replay())
                 streams = [f'{self.prefix}:{s}' for s in streams]
-                async with self.api.data_pull_connect('+'.join(streams), last=last, timeout=timeout) as self.ws:
+                async with self.api.data_pull_connect('+'.join(streams), last=last, timeout=replay_pull_timeout) as self.ws:
                     yield self
+            if not self._replay_task.done():
+                self._replay_task.cancel()
+            else:
+                self._replay_task.result()
             self.pbar = None
             return
 
@@ -94,9 +99,11 @@ class StreamReader(Context):
         self.running = True
         from ptgctl import holoframe
         from ptgctl.util import parse_epoch_time
-        self.pbar = pbar = tqdm.tqdm()
+        pbar = tqdm.tqdm()
         while self.running:
+            pbar.set_description('getting data...')
             data = await self.ws.recv_data()
+            pbar.set_description(f'got {len(data)}')
             if self.prefix:
                 data = [(sid[len(self.prefix)+1:], t, x) for (sid, t, x) in data]
             if self.merged:
