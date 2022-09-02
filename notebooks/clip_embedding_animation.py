@@ -8,13 +8,12 @@ import torch
 from torch import nn
 
 from ptgprocess.clip import MODELS
-from ptgprocess.util import video_feed, draw_text_list
+from ptgprocess.util import video_feed, VideoInput, draw_text_list
 import ptgctl
 
 import matplotlib.pyplot as plt
 plt.rc('figure', figsize=(24, 6))
 import matplotlib.animation as pltanim
-from adjustText import adjust_text
 
 
 from sklearn.manifold import LocallyLinearEmbedding, Isomap
@@ -23,7 +22,7 @@ from sklearn.manifold import LocallyLinearEmbedding, Isomap
 ANN_ROOT='/opt/Github/epic-kitchens-100-annotations-normalized'
 
 
-def draw_embedding_space(Zt, texts, Zt_path, ax=None):
+def draw_embedding_space(Zt, texts, Zt_path=None, adjust=False, ax=None):
     ax = ax or plt.gca()
     
     ax.scatter(Zt[:,0], Zt[:,1], label='text', c='r', s=50)
@@ -31,32 +30,27 @@ def draw_embedding_space(Zt, texts, Zt_path, ax=None):
     ax.set_xticks([])
     ax.set_yticks([])
     text_annots = [ax.annotate(t, (z[0], z[1])) for z, t in zip(Zt, texts)]
-    # adjust_text(
-    #     text_annots, 
-    #     arrowprops=dict(arrowstyle="-", color='b', lw=1), 
-    #     only_move={'points':'y', 'text':'y'}, 
-    #     lim=50)
+    if adjust:
+        from adjustText import adjust_text
+        adjust_text(
+            text_annots, 
+            arrowprops=dict(arrowstyle="-", color='b', lw=1), 
+            only_move={'points':'y', 'text':'y'}, 
+            lim=50)
     if Zt_path is not None:
         ax.plot(Zt_path[:,0], Zt_path[:,1])
-        # plt.scatter(Zt_path[:,0], Zt_path[:,1])
+        # ax.scatter(Zt_path[:,0], Zt_path[:,1])
     
-
-def get_video(video_fname, fps, limit, size=(760, 428)):
-    ims = []
-    for t, im in video_feed(video_fname, fps=fps, include_bad_frame=True):
-        if limit and t > limit/fps:
-            break
-        ims.append(cv2.resize(im, size))
-    return np.stack(ims)
 
 
 def draw(
-    video_fname, model='action2', fps=10, topk=5,
+    video_fname, model='action2', fps=10, topk=5, dim_reduct='lle',
     text_col='narration', normalized=True, test=False,
     recipe=None, recipe_key='steps', contrast_everything=False,
-    checkpoint=None, ann_root=ANN_ROOT
+    checkpoint=None, ann_root=ANN_ROOT, adjust=True, plt_show=False,
+    exclude=None, include=None,
 ):
-    model = MODELS[model](checkpoint)
+    model = MODELS[model](checkpoint=checkpoint)
     
     df = pd.concat([
         pd.read_csv(os.path.join(ann_root, f"EPIC_100_train{'_normalized' if normalized else ''}.csv")).assign(split='train'),
@@ -81,26 +75,41 @@ def draw(
         texts = (df if contrast_everything else df_vid)[text_col].unique()
         has_gt = True
 
+    if exclude:
+        texts = [x for x in texts if x not in exclude]
+    if include:
+        texts = list(texts)+list(include)
+
     print(f"Vocab ({len(texts)} words):", texts)
 
-    Z_text = model.encode_text(texts).detach().numpy()
+    Z_text = model.encode_text(texts)
+    Z_text_np = Z_text.detach().cpu().numpy()
 
-    dimreduc = LocallyLinearEmbedding(n_components=2)
-    # dimreduc = LocallyLinearEmbedding(n_components=2, n_neighbors=20, method='hessian')
-    # dimreduc = Isomap(n_components=2)
-    Zt_text = dimreduc.fit_transform(Z_text)
+    if dim_reduct == 'lle':
+        dimreduc = LocallyLinearEmbedding(n_components=2)
+    if dim_reduct == 'lle_hess':
+        dimreduc = LocallyLinearEmbedding(n_components=2, n_neighbors=7, method='hessian')
+    if dim_reduct == 'lle_hess2':
+        dimreduc = LocallyLinearEmbedding(n_components=2, n_neighbors=20, method='hessian')
+    if dim_reduct == 'iso':
+        dimreduc = Isomap(n_components=2)
+    Zt_text = dimreduc.fit_transform(Z_text_np)
 
-    out_dir = f'output/{video_name}-{model.__class__.__name__}-{dimreduc.__class__.__name__}-{text_col}{f"-test" if test else ""}'
+    out_dir = f'output/{video_name}-{model.__class__.__name__}-{dim_reduct}-{text_col}{f"-test" if test else ""}'
     print('writing to', out_dir)
     os.makedirs(out_dir, exist_ok=True)
 
     plt.figure(figsize=(16, 10))
-    draw_embedding_space(Zt_text, texts, None)
-    plt.savefig(os.path.join(out_dir, f'{text_col}-text-space.jpg'))
-    plt.close()
+    draw_embedding_space(Zt_text, texts, adjust=adjust)
+    if plt_show:
+        plt.show()
+    else:
+        plt.savefig(os.path.join(out_dir, f'{text_col}-text-space.jpg'))
+        plt.close()
 
     test = 50 if test is True else test if test else None
-    ims = get_video(video_fname, fps, test)
+    vid_src = VideoInput(video_fname, fps, size=(760, 428))
+    ims = vid_src.read_all(limit=test)
 
 
     # make animated plot
@@ -111,7 +120,7 @@ def draw(
 
     imshowed = ax1.imshow(ims[0])
 
-    draw_embedding_space(Zt_text, texts, None, ax=ax2)
+    draw_embedding_space(Zt_text, texts, adjust=adjust, ax=ax2)
     imscatter = ax2.scatter([], [], s=100)
     lines_topk = [ax2.plot([], [], c='r')[0] for i in range(topk)]
     imhistory, = ax2.plot([], [], alpha=0.15, c='k')
@@ -122,8 +131,9 @@ def draw(
     def animate(frame):
         im = ims[frame].copy()
 
-        Z_image = model.encode_image(im).detach()
-        zxy = dimreduc.transform(Z_image)
+        Z_image = model.encode_image(im)
+        Z_image_np = Z_image.detach().cpu()
+        zxy = dimreduc.transform(Z_image_np)
         Zt_images.extend(zxy)
 
         similarity = torch.Tensor(100 * Z_image @ Z_text.T).softmax(dim=-1)[0]
@@ -135,7 +145,7 @@ def draw(
 
         i=0
         if has_gt:
-            dft = df_vid[(df_vid.start_frame/60 < frame/fps) & (df_vid.stop_frame/60 > frame/fps)]
+            dft = df_vid[(df_vid.start_frame < frame*vid_src.every) & (df_vid.stop_frame > frame*vid_src.every)]
             texts_true = list(dft.narration.unique())
             _, i = draw_text_list(im, [t for t in texts_true if t in pred_text[:1]], color=(0,255,0))
             _, i = draw_text_list(im, [t for t in texts_true if t in pred_text[1:]], i, color=(255,255,0))
@@ -158,16 +168,22 @@ def draw(
         interval=int(1000/fps), blit=True)
 
     f=os.path.join(out_dir, 'emb-motion.mp4')
-    ani.save(f, writer=pltanim.FFMpegWriter(fps=fps))
-    plt.close()
+    if plt_show:
+        plt.show()
+    else:
+        ani.save(f, writer=pltanim.FFMpegWriter(fps=fps))
+        plt.close()
 
     Zt_images = np.array(Zt_images)
 
     plt.figure(figsize=(16, 10))
-    draw_embedding_space(Zt_text, texts, Zt_images)
+    draw_embedding_space(Zt_text, texts, Zt_images, adjust=adjust)
     plt.scatter(Zt_images[:,0], Zt_images[:,1])
-    plt.savefig(os.path.join(out_dir, 'text+image-space.jpg'))
-    plt.close()
+    if plt_show:
+        plt.show()
+    else:
+        plt.savefig(os.path.join(out_dir, 'text+image-space.jpg'))
+        plt.close()
 
 
 
