@@ -6,11 +6,10 @@ import tqdm
 
 import numpy as np
 
-import ptgctl
 from ptgctl import holoframe
 from ptgctl.util import parse_epoch_time
 from .core import Processor
-from .util import StreamReader, StreamWriter, ImageOutput, nowstring, draw_boxes
+from ..util import StreamReader, StreamWriter, ImageOutput, nowstring, draw_boxes
 
 
 

@@ -14,9 +14,9 @@ from detectron2.utils.visualizer import Visualizer, random_color, ColorMode
 from detectron2.data import MetadataCatalog
 
 # Detic libraries
-detic_path = '/opt/Github/Detic'
+detic_path = '/home/iran/ptg-demo/Detic'
 sys.path.insert(0,  detic_path)
-sys.path.insert(0, os.path.join(detic_path, 'third_party/CenterNet2/'))
+sys.path.insert(0, os.path.join(detic_path, 'third_party/CenterNet2'))
 from detic.config import add_detic_config
 from detic.modeling.utils import reset_cls_test
 from detic.modeling.text.text_encoder import build_text_encoder
@@ -24,10 +24,10 @@ from centernet.config import add_centernet_config
 
 
 BUILDIN_CLASSIFIER = {
-    'lvis': 'datasets/metadata/lvis_v1_clip_a+cname.npy',
-    'objects365': 'datasets/metadata/o365_clip_a+cnamefix.npy',
-    'openimages': 'datasets/metadata/oid_clip_a+cname.npy',
-    'coco': 'datasets/metadata/coco_clip_a+cname.npy',
+    'lvis':       os.path.join(detic_path, 'datasets/metadata/lvis_v1_clip_a+cname.npy'),
+    'objects365': os.path.join(detic_path, 'datasets/metadata/o365_clip_a+cnamefix.npy'),
+    'openimages': os.path.join(detic_path, 'datasets/metadata/oid_clip_a+cname.npy'),
+    'coco':       os.path.join(detic_path, 'datasets/metadata/coco_clip_a+cname.npy'),
 }
 
 BUILDIN_METADATA_PATH = {
@@ -41,7 +41,7 @@ BUILDIN_METADATA_PATH = {
 DEFAULT_PROMPT = 'a {}'
 
 class Detic(nn.Module):
-    def __init__(self, vocab=None, conf_threshold=0.3, prompt=DEFAULT_PROMPT):
+    def __init__(self, vocab=None, conf_threshold=0.3, masks=False, patch_for_embeddings=True, prompt=DEFAULT_PROMPT):
         super().__init__()
         cfg = get_cfg()
         add_centernet_config(cfg)
@@ -51,24 +51,26 @@ class Detic(nn.Module):
         cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.5  # set threshold for this model
         cfg.MODEL.ROI_BOX_HEAD.ZEROSHOT_WEIGHT_PATH = 'rand'
         cfg.MODEL.ROI_HEADS.ONE_CLASS_PER_PROPOSAL = True # For better visualization purpose. Set to False for all classes.
-        # cfg.MODEL.MASK_ON = False
+        cfg.MODEL.MASK_ON = masks
         if not torch.cuda.is_available():
             cfg.MODEL.DEVICE='cpu' # uncomment this to use cpu-only mode.
         cfg.MODEL.ROI_BOX_HEAD.CAT_FREQ_PATH = os.path.join(detic_path, cfg.MODEL.ROI_BOX_HEAD.CAT_FREQ_PATH)
         # print(cfg)
         self.predictor = DefaultPredictor(cfg)
-        self.predictor.model.roi_heads.__class__ = DeticCascadeROIHeads2
-        for b in self.predictor.model.roi_heads.box_predictor:
-            b.__class__ = DeticFastRCNNOutputLayers2
-            b.cls_score.__class__ = ZeroShotClassifier2
+
+        if patch_for_embeddings:
+            self.predictor.model.roi_heads.__class__ = DeticCascadeROIHeads2
+            for b in self.predictor.model.roi_heads.box_predictor:
+                b.__class__ = DeticFastRCNNOutputLayers2
+                b.cls_score.__class__ = ZeroShotClassifier2
+        
         for cascade_stages in range(len(self.predictor.model.roi_heads.box_predictor)):
             self.predictor.model.roi_heads.box_predictor[cascade_stages].test_score_thresh = conf_threshold
 
         self.text_encoder = build_text_encoder(pretrain=True)
         self.text_encoder.eval()
 
-        if vocab:
-            self.set_vocab(vocab, prompt)
+        self.set_vocab(vocab, prompt)
         
     def set_vocab(self, vocab, prompt=DEFAULT_PROMPT):
         if isinstance(vocab, (list, tuple)):
@@ -83,14 +85,16 @@ class Detic(nn.Module):
             self.labels = metadata.thing_classes
 
             self.prompt = prompt = prompt or '{}'
-            classifier = self.text_encoder(
+            self.text_features = classifier = self.text_encoder(
                 [prompt.format(x) for x in vocab]
             ).detach().permute(1, 0).contiguous().cpu()
         else:
+            vocab = vocab or 'lvis'
             self.vocab_key = BUILDIN_METADATA_PATH[vocab]
             self.metadata = metadata = MetadataCatalog.get(BUILDIN_METADATA_PATH[vocab])
             classifier = BUILDIN_CLASSIFIER[vocab]    
-    
+        
+        self.labels = metadata.thing_classes
         reset_cls_test(self.predictor.model, classifier, len(metadata.thing_classes))
 
     def forward(self, im):
@@ -131,12 +135,12 @@ class DeticCascadeROIHeads2(DeticCascadeROIHeads):
                     prev_pred_boxes, image_sizes,
                     logits=[p.objectness_logits for p in proposals])
             predictions = self._run_stage(features, proposals, k, 
-                classifier_info=classifier_info)
+                classifier_info=classifier_info)  # added x_features as i=2
             prev_pred_boxes = self.box_predictor[k].predict_boxes(
                 (predictions[0], predictions[1]), proposals)
             head_outputs.append((self.box_predictor[k], predictions, proposals))
         # Each is a list[Tensor] of length #image. Each tensor is Ri x (K+1)
-        scores_per_stage = [h[0].predict_probs(h[1][:2]+h[1][3:], h[2]) for h in head_outputs]
+        scores_per_stage = [h[0].predict_probs(h[1][:2]+h[1][3:], h[2]) for h in head_outputs] # ++ remove x_features from h
         scores = [
             sum(list(scores_per_image)) * (1.0 / self.num_cascade_stages)
             for scores_per_image in zip(*scores_per_stage)
@@ -155,6 +159,7 @@ class DeticCascadeROIHeads2(DeticCascadeROIHeads):
             predictor.test_nms_thresh,
             predictor.test_topk_per_image,
         )
+        # ++ add clip features to instances [N boxes x 512]
         pred_instances[0].clip_features = predictions[2][filt_idxs]
         return pred_instances
 
@@ -167,7 +172,7 @@ class DeticFastRCNNOutputLayers2(DeticFastRCNNOutputLayers):
         if x.dim() > 2:
             x = torch.flatten(x, start_dim=1)
         scores = []
-        cls_scores, x_features = self.cls_score(x, classifier=classifier_info[0])
+        cls_scores, x_features = self.cls_score(x, classifier=classifier_info[0])  # ++ add x_features
         scores.append(cls_scores)
    
         if classifier_info[2] is not None:
@@ -183,6 +188,7 @@ class DeticFastRCNNOutputLayers2(DeticFastRCNNOutputLayers):
             return scores, proposal_deltas, x_features, prop_score
         else:
             return scores, proposal_deltas, x_features
+        # ++ return x_features
 
 
 class ZeroShotClassifier2(ZeroShotClassifier):
@@ -192,7 +198,7 @@ class ZeroShotClassifier2(ZeroShotClassifier):
             x: B x D'
             classifier_info: (C', C' x D)
         '''
-        feats = x = self.linear(x)
+        x_features = x = self.linear(x)  # ++ save linear output
         if classifier is not None:
             zs_weight = classifier.permute(1, 0).contiguous() # D x C'
             zs_weight = F.normalize(zs_weight, p=2, dim=0) \
@@ -204,15 +210,44 @@ class ZeroShotClassifier2(ZeroShotClassifier):
         x = torch.mm(x, zs_weight)
         if self.use_bias:
             x = x + self.cls_bias
-        return x, feats
+        return x, x_features  # ++ add x_features
+
+
+
+def chunks(iterable,size):
+    it = iter(iterable)
+    chunk = tuple(itertools.islice(it,size))
+    while chunk:
+        yield chunk
+        chunk = tuple(itertools.islice(it,size))
+
+
+import itertools
+
+class VideoFramesLoader:
+    def __init__(self, root_dir, batch_size=64, ext='*'):
+        self.root = root_dir
+        self.ext = ext
+
+    def __iter__(self):
+        fs = glob.iglob(os.path.join(self.root, f'*.{self.ext}'))
+        for chunk in chunks(fs):
+            ims = []
 
 
 
 
+def video_batch_compute(vid_dir):
+    # 
 
+    # load vocab
 
+    model = Detic()
 
+    fs = glob.glob(os.path.join(self.root, f'*.{self.ext}'))
 
+    for fs_batch, im_batch in VideoFramesLoader(vid_dir):
+        fs_batch = model(im_batch)
 
 
 

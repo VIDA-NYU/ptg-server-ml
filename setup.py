@@ -21,7 +21,7 @@ setuptools.setup(
     # entry_points={'console_scripts': ['ptgprocess=ptgprocess:main']},
     install_requires=[
         'numpy', 'orjson', 
-        'ptgctl @ git+ssh://git@github.com/VIDA-NYU/ptgctl@main#egg=ptgctl', 
+        #'ptgctl @ git+ssh://git@github.com/VIDA-NYU/ptgctl@main#egg=ptgctl', 
     ],
     extras_require={
         'test': ['pytest', 'pytest-cov'],

@@ -1,14 +1,8 @@
 from __future__ import annotations
 import os
-import asyncio
 import orjson
-import contextlib
-import datetime
-
 import numpy as np
-
-from .core import Processor
-from .util import Context, StreamReader
+from .util import Context
 
 
 class BaseWriter(Context):
@@ -27,7 +21,7 @@ class RawWriter(BaseWriter):
     def context(self, sample, t_start):
         import zipfile
         print("Opening zip file:", self.fname)
-        with zipfile.ZipFile(self.fname, 'w', zipfile.ZIP_STORED, False) as self.writer:
+        with zipfile.ZipFile(self.fname, 'a', zipfile.ZIP_STORED, False) as self.writer:
             yield self
 
     def write(self, data, ts):
@@ -154,76 +148,3 @@ class CsvWriter(BaseWriter):
         if isinstance(x, float):
             return float(f'{x:.4f}')
         return x
-
-
-class BaseRecorder(Processor):
-    Writer = BaseWriter
-
-    raw = False
-    STORE_DIR = 'recordings'
-    STREAMS: list|None = None
-
-    def new_recording_id(self):
-        return datetime.datetime.now().strftime('%Y.%m.%d-%H.%M.%S')
-
-    recording_id = None
-
-    async def call_async(self, streams=None, recording_id=None, replay=None, fullspeed=None, progress=True, store_dir=None, **kw):
-        store_dir = os.path.join(store_dir or self.STORE_DIR, recording_id or self.new_recording_id())
-        os.makedirs(store_dir, exist_ok=True)
-
-        if not streams:
-            streams = self.api.streams.ls()
-            if self.STREAMS:
-                streams = [s for s in self.api.streams.ls() if any(s.endswith(k) for k in self.STREAMS)]
-        elif isinstance(streams, str):
-            streams = streams.split('+')
-
-        raw = getattr(self.Writer, 'raw', False)
-        raw_ts = getattr(self.Writer, 'raw_ts', False)
-
-        writers = {}
-        with contextlib.ExitStack() as stack:
-            async with StreamReader(
-                    self.api, streams, recording_id=replay, 
-                    progress=progress, fullspeed=fullspeed, 
-                    raw=raw, raw_ts=raw_ts) as reader:
-                async def _stream():
-                    async for sid, t, x in reader:
-                        if recording_id and self.recording_id != recording_id:
-                            break
-
-                        if sid not in writers:
-                            writers[sid] = stack.enter_context(
-                                self.Writer(sid, store_dir, sample=x, t_start=t, **kw))
-
-                        writers[sid].write(x, t)
-
-                await asyncio.gather(_stream(), reader.watch_replay())
-
-class RawRecorder(BaseRecorder):
-    Writer = RawWriter
-    
-
-
-class VideoRecorder(BaseRecorder):
-    Writer = VideoWriter
-
-
-class AudioRecorder(BaseRecorder):
-    Writer = AudioWriter
-
-
-class JsonRecorder(BaseRecorder):
-    Writer = JsonWriter
-
-
-
-if __name__ == '__main__':
-    import fire
-    fire.Fire({
-        'video': VideoRecorder,
-        'audio': AudioRecorder,
-        'json': JsonRecorder,
-        'raw': RawRecorder,
-    })
