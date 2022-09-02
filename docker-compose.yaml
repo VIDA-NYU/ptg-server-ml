@@ -7,25 +7,86 @@ x-loki-logging: &lokilogging
 
 services:
 
-  # Machine Learning for Streams
+  raw_recorder:
+    image: ptgprocess
+    container_name: raw_recorder
+    restart: unless-stopped
+    networks:
+      - ptg
+    volumes:
+      - ${VOLUMES}/recordings/raw:/src/recordings
+    command: python -m ptgprocess.processors.record raw run
+
+  video_recorder:
+    image: ptgprocess
+    container_name: video_recorder
+    restart: unless-stopped
+    networks:
+      - ptg
+    volumes:
+      - ${VOLUMES}/recordings/post:/src/recordings
+    command: python -m ptgprocess.processors.record video run
+
+  audio_recorder:
+    image: ptgprocess
+    container_name: audio_recorder
+    restart: unless-stopped
+    networks:
+      - ptg
+    volumes:
+      - ${VOLUMES}/recordings/post:/src/recordings
+    command: python -m ptgprocess.processors.record audio run
+
+  json_recorder:
+    image: ptgprocess
+    container_name: json_recorder
+    restart: unless-stopped
+    networks:
+      - ptg
+    volumes:
+      - ${VOLUMES}/recordings/post:/src/recordings
+    command: python -m ptgprocess.processors.record json run
+
+
+
+  # 
+
+  actionclip:
+    image: ptgprocess
+    container_name: actionclip
+    networks:
+      - ptg
+    restart: unless-stopped
+    command: python -m ptgprocess.processors.clip action2 run
 
   yolo3d:
-    build: ./yolo
-    container_name: yolo3d
+    image: ptgprocess
+    container_name: yolo
     networks:
       - ptg
     restart: unless-stopped
-    logging: *lokilogging
+    command: python -m ptgprocess.processors.yolo3d run
 
-  clip_zero:
-    build: ./clip-zero
-    container_name: clip_zero
-    networks:
-      - ptg
-    environment:
-      REDIS_URL: redis://redis:6379
-    restart: unless-stopped
-    logging: *lokilogging
+
+  # Machine Learning for Streams
+
+  # yolo3d:
+  #   build: ./yolo
+  #   container_name: yolo3d
+  #   networks:
+  #     - ptg
+  #   restart: unless-stopped
+  #   logging: *lokilogging
+
+  # clip_zero:
+  #   build: ./clip-zero
+  #   container_name: clip_zero
+  #   networks:
+  #     - ptg
+  #   environment:
+  #     REDIS_URL: redis://redis:6379
+  #   restart: unless-stopped
+  #   logging: *lokilogging
 
   reasoning:
     build: ./reasoning

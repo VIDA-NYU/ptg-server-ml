@@ -7,13 +7,14 @@ import numpy as np
 import torch
 from torch import nn
 
+from ptgprocess.detic import Detic, BUILDIN_CLASSIFIER
+
 from deep_sort import nn_matching
 from deep_sort.detection import Detection
 from deep_sort.tracker import Tracker
 from deep_sort.track import Track
 from detectron2.utils.visualizer import Visualizer, random_color, ColorMode, GenericMask
 
-from ptgprocess.detic import Detic
 from ptgprocess.util import video_feed, ImageOutput, draw_boxes
 
 
@@ -87,7 +88,7 @@ from ptgprocess.util import video_feed, ImageOutput, draw_boxes
 class Detection2(Detection):
     def __init__(self, tlwh, confidence, feature=None, **meta):
         super().__init__(tlwh, confidence, feature)
-        self.meta = meta
+        self.meta=meta
 
 
 class Track2(Track):
@@ -99,7 +100,7 @@ class Track2(Track):
 
     @property
     def description(self):
-        return f'track {self.track_id}: {self.label[-1]}'
+        return f'({self.track_id}) {self.label[-1]}'
 
     def _update_meta(self, meta):
         if meta:
@@ -125,8 +126,40 @@ class Tracker2(Tracker):
             detection.feature, meta=detection.meta))
         self._next_id += 1
 
-def run(src, max_cosine_distance=0.2, nn_budget=None, 
-        out_file=None, fps=10, show=None, **kw):
+
+
+
+def get_vocab(vocab, ann_root):
+    if vocab is None:
+        return vocab  # someone elses problem lol
+    if isinstance(vocab, (list, tuple)):
+        return vocab  # literal
+    if vocab in BUILDIN_CLASSIFIER:
+        return vocab  # builtin
+    if ':' in vocab:
+        kind, vocab, key = vocab.split(':', 2)
+        kind = kind.lower()
+        if kind == 'recipe':
+            import ptgctl
+            api = ptgctl.API()
+            recipe = api.recipes.get(vocab)
+            return [w for k in key.split(',') for w in recipe[k]]
+        if kind.startswith('ek'):
+            import pandas as pd
+            df = pd.concat([
+                pd.read_csv(os.path.join(ann_root, "EPIC_100_train_normalized.csv")).assign(split='train'),
+                pd.read_csv(os.path.join(ann_root, "EPIC_100_validation_normalized.csv")).assign(split='val'),
+            ])
+            df = df[df.video_id == vocab] if vocab != 'all' else df
+            return df[key].unique().tolist()
+    raise ValueError("Invalid vocab")
+
+
+
+
+def run(src, vocab=None, max_cosine_distance=0.2, nn_budget=None, 
+        out_file=None, fps=10, show=None, ann_root='epic-kitchens-100-annotations-normalized', 
+        include=None, exclude=None, splitby=None, tracking=False, dump_predictions=None, **kw):
     """Run multi-target tracker on a particular sequence.
     
     Arguments:
@@ -138,29 +171,69 @@ def run(src, max_cosine_distance=0.2, nn_budget=None,
     """
     tracker = Tracker2(nn_matching.NearestNeighborDistanceMetric("cosine", max_cosine_distance, nn_budget))
 
+    vocab_name = vocab.replace(':','') if isinstance(vocab, str) else ''.join(vocab or []).replace(' ','')[:10]
+    vocab = get_vocab(vocab, ann_root)
+    if splitby:
+        vocab = [x.strip() for x in vocab for x in x.split(splitby)]
+    if exclude:
+        vocab = [x for x in vocab if x not in exclude]
+    if include:
+        vocab = list(vocab)+list(include)
+
+    vocab = list(set(vocab))
+
     # # model = Yolo(**kw)
     # model = torch.hub.load('ultralytics/yolov5', 'yolov5s')
     # model.eval()
-    model = Detic(**kw)
+    model = Detic(vocab=vocab, **kw)
+
+    print("labels:", len(model.labels), model.labels)
 
     if out_file is True:
-        out_file='tracked_'+os.path.basename(src)
+        out_file=os.path.join('output', f'objecttrack_{vocab_name}_{os.path.basename(src)}')
+    if dump_predictions is True:
+        dump_predictions = 'output/predictions'
     outsize=600
 
+    if dump_predictions:
+        video_name = os.path.splitext(os.path.basename(src))[0]
+        assert video_name.startswith('P'), 'not epic kitchens!!!'
+        participant_id = video_name.split('_')[0]
+        dump_predictions = os.path.join(dump_predictions, participant_id, video_name)
+        print('writing predictions to', dump_predictions)
+        os.makedirs(dump_predictions, exist_ok=True)
+
     with ImageOutput(out_file, fps, show=show) as imout:
-        for t, im in video_feed(src, fps):
+        for i, im in video_feed(src, fps, give_time=False):
             im = cv2.resize(im, (outsize, int(outsize*im.shape[0]/im.shape[1])))
-            # X_im = image_loader(im)
-            # xywh, scores, features = model(im)
-            # result.render()
-            # imout.output(result.ims[0])
             outputs = model(im)
+            insts = outputs["instances"].to("cpu")
+            instances = [insts[i] for i in range(len(insts))] # convert to list
+
+            if dump_predictions:
+                frame_fname = os.path.join(dump_predictions, f'{i:07d}.npz')
+                np.savez(
+                    frame_fname,
+                    boxes=insts.pred_boxes.tensor.numpy(), 
+                    class_ids=insts.pred_classes.numpy(), 
+                    clip_embeds=insts.clip_features.numpy(),
+                    scores=insts.scores.numpy())
+                # np.savez(
+                #     boxes=[i.pred_boxes.tensor.numpy() for i in instances],
+                #     class_ids=[i.pred_classes.numpy() for i in instances],
+                #     clip_embeds=[i.clip_features.numpy() for i in instances],
+                #     scores=[i.scores.numpy() for i in instances],
+                # )
+                d = np.load(frame_fname)
+                #print(frame_fname)
+                #print({k: v.shape for k,v in d.items()})
+
+            if not tracking:
+                imout.output(model.draw(im, outputs))
+                continue
+
             instances = outputs["instances"].to("cpu")
             instances = [instances[i] for i in range(len(instances))] # convert to list
-            # print(len(instances))
-            # print({k: getattr(v, 'shape', v) for k, v in instances[0]._fields.items()})
-
-            # imout.output(model.draw(im, outputs))
 
             # Update tracker.
             tracker.predict()
@@ -171,25 +244,28 @@ def run(src, max_cosine_distance=0.2, nn_budget=None,
                     r.clip_features[0],
                     class_id=r.pred_classes[0],
                     label=model.labels[r.pred_classes[0]],
-                    mask=r.pred_masks[0],
+                    #mask=r.pred_masks[0],
                     time=t)
                 for r in instances
             ])
 
             tracks = [
                 track for track in tracker.tracks 
-                # if track.is_confirmed()
+                if track.is_confirmed() and track.time_since_update < 2
             ]
+            print(len(tracks))
 
+            #cv2.putText(im, str(len(tracks)), (3, im.shape[1] - 15), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0))
             v = Visualizer(im[:, :, ::-1])
             out = v.overlay_instances(
                 boxes=[t.to_tlbr() for t in tracks],
-                # masks=[GenericMask(t.masks[-1], v.output.height, v.output.width) for t in tracks],
+                #masks=[GenericMask(t.mask[-1], v.output.height, v.output.width) for t in tracks],
                 labels=[t.description for t in tracks],
                 assigned_colors=[t.color for t in tracks],
                 alpha=0.8
             )
             im = out.get_image()[:, :, ::-1]
+            #cv2.putText(im, str(len(tracks)), (3, 5), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0))
             imout.output(im)
 
             # # imout.output(im)
