@@ -22,6 +22,8 @@ class ReasoningApp:
         self.api = ptgctl.CLI(username=os.getenv('API_USER') or 'reasoning',
                               password=os.getenv('API_PASS') or 'reasoning')
 
+        self.state_manager = StateManager(configs)
+
     @ptgctl.util.async2sync
     async def run(self, prefix=None):
         prefix = prefix or ''
@@ -30,8 +32,7 @@ class ReasoningApp:
         recipe_id: str = self.api.sessions.current_recipe()
         recipe = self.api.recipes.get(recipe_id)
         logger.info('Loaded recipe: %s' % str(recipe))
-        state_manager = StateManager(configs)
-        step_data = state_manager.start_recipe(recipe)
+        step_data = self.state_manager.start_recipe(recipe)
         logger.info('First step: %s' % str(step_data))
         top = 5
         async with self.api.data_pull_connect(input_sid) as ws_pull, \
@@ -44,10 +45,10 @@ class ReasoningApp:
                 action_predictions.pop('frame_type', None)
                 top_actions = sorted(action_predictions.items(), key=lambda x: x[1], reverse=True)[:top]
                 logger.info('Perception outputs: %s' % str(top_actions))
-                results = state_manager.check_status([i[0] for i in top_actions])
-                logger.info('Reasoning outputs: %s' % str(results))
+                recipe_status = self.state_manager.check_status([i[0] for i in top_actions])
+                logger.info('Reasoning outputs: %s' % str(recipe_status))
 
-                await ws_push.send_data([orjson.dumps(results)])
+                await ws_push.send_data([orjson.dumps(recipe_status)])
 
 
 if __name__ == '__main__':
