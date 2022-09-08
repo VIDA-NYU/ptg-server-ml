@@ -211,13 +211,19 @@ class VideoOutput:#'avc1', 'mp4v',
 ImageOutput = VideoOutput
 
 class VideoInput:
-    def __init__(self, src, fps=None, size=None, give_time=True, bad_frames_count=True, include_bad_frame=False):
+    def __init__(self, 
+            src, fps=None, size=None, give_time=True, 
+            start_frame=None, stop_frame=None, 
+            bad_frames_count=True, 
+            include_bad_frame=False):
         self.src = src
         self.dest_fps = fps
         self.size = size
         self.bad_frames_count = bad_frames_count
         self.include_bad_frame = include_bad_frame
         self.give_time = give_time
+        self.start_frame = start_frame
+        self.stop_frame = stop_frame
 
     def __enter__(self):
         self.cap = cap = cv2.VideoCapture(self.src)
@@ -229,6 +235,9 @@ class VideoInput:
             int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)),
             int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)))
         self.frame = np.zeros(tuple(size)+(3,)).astype('uint8')
+
+        if self.start_frame:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, self.start_frame)
 
         self.total = total = cap.get(cv2.CAP_PROP_FRAME_COUNT)
         print(f"{total/src_fps:.1f} second video. {total} frames @ {self.src_fps} fps,",
@@ -251,7 +260,7 @@ class VideoInput:
         return np.stack(ims)
 
     def __iter__(self):
-        i=0
+        i = self.start_frame or 0
         while not self.total or self.pbar.n < self.total:
             ret, im = self.cap.read()
             self.pbar.update()
@@ -266,6 +275,9 @@ class VideoInput:
             self.frame = im
 
             if not self.bad_frames_count: i += 1
+            # i = self.cap.get(cv2.CAP_PROP_POS_FRAMES)
+            if self.stop_frame and i > self.stop_frame:
+                break
 
             if i%self.every:
                 continue

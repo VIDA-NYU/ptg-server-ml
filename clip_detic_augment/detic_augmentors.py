@@ -372,7 +372,8 @@ class Thumbnail(RandomGroup):
         super().__init__(**kw)
         self.size = size
     def worker(self, im):
-        return im.thumbnail(self.size, Image.ANTIALIAS)
+        im.thumbnail(self.size, Image.ANTIALIAS)
+        return im
 
 
 def _perspective_coeffs(pa, pb):
@@ -420,18 +421,19 @@ def resize_augmentation(input_size):
         Thumbnail(600),
     ])
 
-def get_augmentation(training, input_size, crop_choice=None):
+def get_augmentation(training=True, input_size=600):
     import random
     import torchvision
-    input_mean = [0.48145466, 0.4578275, 0.40821073]
-    input_std = [0.26862954, 0.26130258, 0.27577711]
-    scale_size = input_size * 256 // 224
+    # input_mean = [0.48145466, 0.4578275, 0.40821073]
+    # input_std = [0.26862954, 0.26130258, 0.27577711]
+    # scale_size = input_size * 256 // 224
     return torchvision.transforms.Compose([
         torchvision.transforms.ToPILImage(),
         torchvision.transforms.Lambda(lambda x: [x]),
+        Thumbnail([input_size, input_size]),
         *(
             [
-                GroupScale((400, 600)),
+                # GroupScale((400, 600)),
                 # GroupPerspective(randomwalk(
                 #     np.array([(0,0), (0,0), (0.2,0.2), (0.2,0.2)]),
                 #     np.array([(0,0), (0,0), (0.9,0.5), (0.9,0.5)]), 
@@ -448,7 +450,7 @@ def get_augmentation(training, input_size, crop_choice=None):
                     brightness_factor=randomwalk(0.7, 1.5, 0.05), 
                     contrast_factor=randomwalk(0.5, 1.5, 0.05),
                     gamma_factor=randomwalk(0.5, 2, 0.05),
-                    hue_factor=randomwalk(0.09, 0.1, 0.001),
+                    hue_factor=randomwalk(-0.05, 0.05, 0.001),
                     saturation_factor=randomwalk(0.5, 1.5, 0.05),
                     sharpness_factor=randomwalk(0.5, 1.5, 0.05),
                     # posterize_factor=randomwalk(5, 8, 0.3),
@@ -457,8 +459,8 @@ def get_augmentation(training, input_size, crop_choice=None):
             ]
             if training else
             [
-                GroupScale(scale_size),  
-                GroupCenterCrop(input_size)
+                # GroupScale(scale_size),  
+                # GroupCenterCrop(input_size)
             ]
         ), 
         Stack(roll=False),
@@ -467,7 +469,7 @@ def get_augmentation(training, input_size, crop_choice=None):
     ])
 
 
-def test_it(src, training=True, input_size=600, fps=10, out_file=None, show=None, loop=None, accel=1, **kw):
+def test_it(src, training=True, input_size=600, fps=10, out_file=None, show=None, start_frame=0, loop=None, accel=1, **kw):
     from ptgprocess.util import VideoInput, VideoOutput
 
     if out_file is True:
@@ -476,7 +478,7 @@ def test_it(src, training=True, input_size=600, fps=10, out_file=None, show=None
     with VideoOutput(out_file, fps*accel, show=show) as vout:
         while True:
             augs = get_augmentation(training, input_size, **kw)
-            with VideoInput(src, fps) as vin:
+            with VideoInput(src, fps, start_frame=start_frame, stop_frame=start_frame+loop*60 if loop else None) as vin:
                 for t, im in vin:
                     if loop and t > loop:
                         break
