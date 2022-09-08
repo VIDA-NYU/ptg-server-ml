@@ -131,10 +131,10 @@ class StreamWriter(Context):
         await self.ws.send_data(data)
 
 
-class ImageOutput:#'avc1', 'mp4v', 
+class VideoOutput:#'avc1', 'mp4v', 
     prev_im = None
     t_video = 0
-    def __init__(self, src, fps, cc='mp4v', cc_fallback='avc1', fixed_fps=False, show=None):
+    def __init__(self, src=None, fps=None, cc='mp4v', cc_fallback='avc1', fixed_fps=False, show=None):
         self.src = src
         self.cc = cc
         self.cc_fallback = cc_fallback
@@ -158,6 +158,8 @@ class ImageOutput:#'avc1', 'mp4v',
     async def __aexit__(self, *a): return self.__exit__(*a)
 
     def output(self, im, t=None):
+        if issubclass(im.dtype.type, np.floating):
+            im = (255*im).astype('uint8')
         if self.src:
             if self.fixed_fps and t is not None:
                 self.write_video_fixed_fps(im, t)
@@ -171,7 +173,7 @@ class ImageOutput:#'avc1', 'mp4v',
         if not self._w:
             ccs = [self.cc, self.cc_fallback]
             for cc in ccs:
-                os.makedirs(os.path.dirname(self.src), exist_ok=True)
+                os.makedirs(os.path.dirname(self.src) or '.', exist_ok=True)
                 self._w = cv2.VideoWriter(
                     self.src, cv2.VideoWriter_fourcc(*cc),
                     self.fps, im.shape[:2][::-1], True)
@@ -199,6 +201,7 @@ class ImageOutput:#'avc1', 'mp4v',
         if cv2.waitKey(1) == ord('q'):  # q to quit
             raise StopIteration
 
+ImageOutput = VideoOutput
 
 class VideoInput:
     def __init__(self, src, fps=None, size=None, give_time=True, bad_frames_count=True, include_bad_frame=False):
@@ -224,6 +227,7 @@ class VideoInput:
         print(f"{total/src_fps:.1f} second video. {total} frames @ {self.src_fps} fps,",
               f"reducing to {self.dest_fps} fps" if self.dest_fps else '')
         self.pbar = tqdm.tqdm(total=int(total))
+        return self
 
     def __exit__(self, *a):
         self.cap.release()
