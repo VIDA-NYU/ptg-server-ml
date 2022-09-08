@@ -15,8 +15,8 @@ from ..util import StreamReader, StreamWriter, ImageOutput, nowstring, draw_boxe
 
 class Yolo3D(Processor):
     output_prefix = 'yolo3d'
-    image_box_keys = ['xywhn', 'confidence', 'class_id']
-    world_box_keys = ['xyz_center', 'xyz_top', 'confidence', 'class_id']
+    image_box_keys = ['xywhn', 'confidence', 'class_id', 'labels']
+    world_box_keys = ['xyz_center', 'xyz_top', 'confidence', 'class_id', 'labels']
     min_dist_secs = 1
     max_depth_dist = 7
     STORE_DIR = 'post'
@@ -65,7 +65,8 @@ class Yolo3D(Processor):
                         dts = depthlt['timestamp']
                         secs = parse_epoch_time(mts) - parse_epoch_time(dts)
                         if abs(secs) > self.min_dist_secs:
-                            raise KeyError(f"timestamps too far apart main={mts} depth={dts} ∆{secs:.3g}s")
+                            tqdm.tqdm.write(f"timestamps too far apart main={mts} depth={dts} ∆{secs:.3g}s")
+                            continue
                         if mts == self.last_timestamp:
                             continue
                         self.last_timestamp = mts

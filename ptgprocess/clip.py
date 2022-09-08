@@ -12,9 +12,12 @@ import clip
 
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
-localfile = lambda *fs: os.path.join(os.path.dirname(__file__), *fs)
-ACTION1_CHECKPOINT = localfile('../models/epoch=2-step=99021.ckpt')
-ACTION2_CHECKPOINT = localfile('../models/model_best.pt')
+localfile = lambda *fs: os.path.abspath(os.path.join(os.path.dirname(__file__), *fs))
+
+MODEL_DIR = os.getenv('MODEL_DIR') or localfile('../models')
+
+ACTION1_CHECKPOINT = os.path.join(MODEL_DIR, 'epoch=2-step=99021.ckpt')
+ACTION2_CHECKPOINT = os.path.join(MODEL_DIR, 'model_best.pt')
 
 class ZeroClip(nn.Module):
     def __init__(self, model_name="ViT-B/32", **kw):

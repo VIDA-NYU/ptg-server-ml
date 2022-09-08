@@ -101,15 +101,19 @@ class RawRecorder(BaseRecorder):
 
 class VideoRecorder(BaseRecorder):
     Writer = VideoWriter
-
+    STREAMS=['main', 'depthlt', 'gll', 'glf', 'grf', 'grr']
 
 class AudioRecorder(BaseRecorder):
     Writer = AudioWriter
+    STREAMS = ['mic0']
 
 
 class JsonRecorder(BaseRecorder):
     Writer = JsonWriter
-
+    STREAMS = [
+        'hand', 'eye', 'imuaccel', 'imugyro', 'imumag', 'yolo*', 'clip*',
+        'gllCal', 'glfCal', 'grfCal', 'grrCal', 'depthltCal'
+    ]
 
 
 if __name__ == '__main__':

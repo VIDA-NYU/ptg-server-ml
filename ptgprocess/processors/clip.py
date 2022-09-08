@@ -11,6 +11,7 @@ from .core import Processor
 from ..util import StreamReader, StreamWriter, ImageOutput, nowstring, draw_text_list
 from ..clip import ZeroClip, ActionClip1, ActionClip2
 
+class AsyncExit(Exception): pass
 
 class ZeroClipProcessor(Processor):
     output_prefix = 'clip:zero'
@@ -24,18 +25,37 @@ class ZeroClipProcessor(Processor):
     Model = ZeroClip
 
     async def call_async(self, recipe_id=None, *a, **kw):
+        recipe_id = self.api.sessions.current_recipe()
+        while not recipe_id:
+            print("waiting for recipe to be activated")
+            recipe_id = await self._watch_recipe_id(recipe_id)
+        await self._call_async(recipe_id, *a, **kw)
+        return
+        
         if recipe_id:
+            print("explicitly set recipe ID", recipe_id)
             return await self._call_async(recipe_id, *a, **kw)
 
+
+
+
+
+
+
         recipe_id = self.api.sessions.current_recipe()
-        if not recipe_id:
+        while not recipe_id:
             print("waiting for recipe to be activated")
             recipe_id = await self._watch_recipe_id(recipe_id)
         print("Starting recipe:", recipe_id)
-        return await asyncio.gather(
-            self._call_async(recipe_id, *a, **kw),
-            self._watch_recipe_id(recipe_id)
-        )
+        
+        t = asyncio.create_task(self._call_async(recipe_id, *a, **kw))
+        try:
+            await self._watch_recipe_id(recipe_id)
+        finally:
+            if not t.done():
+                t.cancel()
+            else:
+                t.result()
 
     async def _watch_recipe_id(self, recipe_id):
         loop = asyncio.get_event_loop()
@@ -45,6 +65,7 @@ class ZeroClipProcessor(Processor):
                 asyncio.sleep(3)
             )
             if new_recipe_id != recipe_id:
+                self.current_id = new_recipe_id
                 return new_recipe_id
 
     async def _call_async(self, recipe_id, replay=None, fullspeed=None, out_file=None, fps=5, show=False, test=False, store_dir=None, **kw):
@@ -67,31 +88,29 @@ class ZeroClipProcessor(Processor):
         async with StreamReader(self.api, ['main'], recording_id=replay, fullspeed=fullspeed) as reader, \
                    StreamWriter(self.api, out_sids, test=test) as writer, \
                    ImageOutput(out_file, fps, fixed_fps=True, show=show) as imout:
-            async def _stream():
-                async for _, t, d in reader:
-                    if recipe_id and self.current_id != recipe_id:
-                        print("recipe changed", recipe_id, '->', self.current_id)
-                        break
-                    # encode the image and compare to text queries
-                    im = d['image']
-                    z_image = self.model.encode_image(im)
-                    if z_image is None:
-                        continue
-                    sims = {k: self.model.compare_image_text(z_image, z_texts[k])[0] for k in out_keys}
-                    
-                    await writer.write([
-                        self.dump(texts[k], sims[k]) 
-                        for k in out_keys
-                    ])
+            async for _, t, d in reader:
+                if recipe_id and self.current_id != recipe_id:
+                    print("recipe changed", recipe_id, '->', self.current_id)
+                    break
+                # encode the image and compare to text queries
+                im = d['image']
+                z_image = self.model.encode_image(im)
+                #if z_image is None:
+                #    continue
+                sims = {k: self.model.compare_image_text(z_image, z_texts[k])[0] for k in out_keys}
+                
+                await writer.write([
+                    self.dump(texts[k], sims[k]) 
+                    for k in out_keys
+                ])
 
-                    if imout.active:
-                        imout.output(draw_text_list(cv2.cvtColor(im, cv2.COLOR_RGB2BGR), [
-                            f'{texts[k][i]} ({sims[k][i]:.0%})' 
-                            for k in out_keys 
-                            for i in torch.topk(sims[k], 3, dim=-1)[1].tolist()
-                        ])[0], t)
+                if imout.active:
+                    imout.output(draw_text_list(cv2.cvtColor(im, cv2.COLOR_RGB2BGR), [
+                        f'{texts[k][i]} ({sims[k][i]:.0%})' 
+                        for k in out_keys 
+                        for i in torch.topk(sims[k], 3, dim=-1)[1].tolist()
+                    ])[0], t)
 
-            await asyncio.gather(_stream(), reader.watch_replay())
 
     def dump(self, text, similarity):
         return orjson.dumps(
