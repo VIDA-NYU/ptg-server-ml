@@ -148,3 +148,29 @@ class CsvWriter(BaseWriter):
         if isinstance(x, float):
             return float(f'{x:.4f}')
         return x
+
+
+class RawReader:
+    def __init__(self, src):
+        if os.path.isdir(src):
+            fs = sorted(glob.glob(os.path.join(src, '*')))
+        else:
+            fs = [src]
+        self.fs = fs
+
+    def __enter__(self):
+        return self
+    def __exit__(self, *a):
+        if self.reader is not None:
+            return self.reader.__exit__(*a)
+
+    def __iter__(self):
+        import zipfile
+        for f in self.fs:
+            with zipfile.ZipFile(f, 'r', zipfile.ZIP_STORED, False) as self.reader:
+                for ts in sorted(self.reader.namelist()):
+                    with zf.open(ts, 'r') as f:
+                        yield ts, f.read()
+            self.reader = None
+
+
