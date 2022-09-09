@@ -15,7 +15,7 @@ services:
       - ptg
     volumes:
       - ${VOLUMES}/recordings/raw:/src/recordings
-    command: -m ptgprocess.processors.record raw run
+    command: -m ptgprocess.processors.record raw run --continuous
 
   video_recorder:
     image: ptgprocess
@@ -25,7 +25,7 @@ services:
       - ptg
     volumes:
       - ${VOLUMES}/recordings/post:/src/recordings
-    command: -m ptgprocess.processors.record video run
+    command: -m ptgprocess.processors.record video run --continuous
 
   audio_recorder:
     image: ptgprocess
@@ -35,7 +35,7 @@ services:
       - ptg
     volumes:
       - ${VOLUMES}/recordings/post:/src/recordings
-    command: -m ptgprocess.processors.record audio run
+    command: -m ptgprocess.processors.record audio run --continuous
 
   json_recorder:
     image: ptgprocess
@@ -45,7 +45,7 @@ services:
       - ptg
     volumes:
       - ${VOLUMES}/recordings/post:/src/recordings
-    command: -m ptgprocess.processors.record json run
+    command: -m ptgprocess.processors.record json run --continuous
 
 
 
@@ -60,7 +60,7 @@ services:
       - ${VOLUMES}/models:/src/lib/ptgprocess/models
       - ${VOLUMES}/models/pretrained-clip/:/root/.cache/clip
     restart: unless-stopped
-    command: -m ptgprocess.processors.clip action2 run
+    command: -m ptgprocess.processors.clip action2 run --continuous
 
   yolo3d:
     image: ptgprocess
@@ -70,38 +70,18 @@ services:
     restart: unless-stopped
     volumes:
       - ${VOLUMES}/models:/src/app/models
-    command: -m ptgprocess.processors.yolo3d run
+    command: -m ptgprocess.processors.yolo3d run --continuous
     environment:
       MODEL_DIR: /src/app/models
 
 
-  # Machine Learning for Streams
-
-  # yolo3d:
-  #   build: ./yolo
-  #   container_name: yolo3d
+  # reasoning:
+  #   build: ./reasoning
+  #   container_name: reasoning
   #   networks:
   #     - ptg
   #   restart: unless-stopped
   #   logging: *lokilogging
-
-  # clip_zero:
-  #   build: ./clip-zero
-  #   container_name: clip_zero
-  #   networks:
-  #     - ptg
-  #   environment:
-  #     REDIS_URL: redis://redis:6379
-  #   restart: unless-stopped
-  #   logging: *lokilogging
-
-  reasoning:
-    build: ./reasoning
-    container_name: reasoning
-    networks:
-      - ptg
-    restart: unless-stopped
-    logging: *lokilogging
 
 
 # connect these containers to the server containers
