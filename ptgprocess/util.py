@@ -119,21 +119,28 @@ class StreamReader(Context):
 
 
 class StreamWriter(Context):
-    def __init__(self, api, streams, test=False, **kw):
+    def __init__(self, api, streams, writer=None, test=False, **kw):
         super().__init__(streams=streams, **kw)
         self.api = api
         self.test = test
+        self.writer = writer
 
     async def acontext(self, streams):
         if self.test:
             yield self
             return
+        if self.writer:
+            yield self
+            return
         async with self.api.data_push_connect('+'.join(streams), batch=True) as self.ws:
             yield self
 
-    async def write(self, data):
+    async def write(self, data, t=None):
         if self.test:
             print(data)
+            return
+        if self.writer:
+            self.writer.write(data, t)
             return
         await self.ws.send_data(data)
 
