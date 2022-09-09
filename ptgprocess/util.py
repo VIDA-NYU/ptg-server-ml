@@ -145,10 +145,10 @@ class StreamWriter(Context):
         await self.ws.send_data(data)
 
 
-class ImageOutput:#'avc1', 'mp4v', 
+class VideoOutput:#'avc1', 'mp4v', 
     prev_im = None
     t_video = 0
-    def __init__(self, src, fps, cc='mp4v', cc_fallback='avc1', fixed_fps=False, show=None):
+    def __init__(self, src=None, fps=None, cc='mp4v', cc_fallback='avc1', fixed_fps=False, show=None):
         self.src = src
         self.cc = cc
         self.cc_fallback = cc_fallback
@@ -172,6 +172,8 @@ class ImageOutput:#'avc1', 'mp4v',
     async def __aexit__(self, *a): return self.__exit__(*a)
 
     def output(self, im, t=None):
+        if issubclass(im.dtype.type, np.floating):
+            im = (255*im).astype('uint8')
         if self.src:
             if self.fixed_fps and t is not None:
                 self.write_video_fixed_fps(im, t)
@@ -185,7 +187,7 @@ class ImageOutput:#'avc1', 'mp4v',
         if not self._w:
             ccs = [self.cc, self.cc_fallback]
             for cc in ccs:
-                os.makedirs(os.path.dirname(self.src), exist_ok=True)
+                os.makedirs(os.path.dirname(self.src) or '.', exist_ok=True)
                 self._w = cv2.VideoWriter(
                     self.src, cv2.VideoWriter_fourcc(*cc),
                     self.fps, im.shape[:2][::-1], True)
@@ -213,15 +215,22 @@ class ImageOutput:#'avc1', 'mp4v',
         if cv2.waitKey(1) == ord('q'):  # q to quit
             raise StopIteration
 
+ImageOutput = VideoOutput
 
 class VideoInput:
-    def __init__(self, src, fps=None, size=None, give_time=True, bad_frames_count=True, include_bad_frame=False):
+    def __init__(self, 
+            src, fps=None, size=None, give_time=True, 
+            start_frame=None, stop_frame=None, 
+            bad_frames_count=True, 
+            include_bad_frame=False):
         self.src = src
         self.dest_fps = fps
         self.size = size
         self.bad_frames_count = bad_frames_count
         self.include_bad_frame = include_bad_frame
         self.give_time = give_time
+        self.start_frame = start_frame
+        self.stop_frame = stop_frame
 
     def __enter__(self):
         self.cap = cap = cv2.VideoCapture(self.src)
@@ -234,10 +243,14 @@ class VideoInput:
             int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)))
         self.frame = np.zeros(tuple(size)+(3,)).astype('uint8')
 
+        if self.start_frame:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, self.start_frame)
+
         self.total = total = cap.get(cv2.CAP_PROP_FRAME_COUNT)
         print(f"{total/src_fps:.1f} second video. {total} frames @ {self.src_fps} fps,",
               f"reducing to {self.dest_fps} fps" if self.dest_fps else '')
         self.pbar = tqdm.tqdm(total=int(total))
+        return self
 
     def __exit__(self, *a):
         self.cap.release()
@@ -254,7 +267,7 @@ class VideoInput:
         return np.stack(ims)
 
     def __iter__(self):
-        i=0
+        i = self.start_frame or 0
         while not self.total or self.pbar.n < self.total:
             ret, im = self.cap.read()
             self.pbar.update()
@@ -269,6 +282,9 @@ class VideoInput:
             self.frame = im
 
             if not self.bad_frames_count: i += 1
+            # i = self.cap.get(cv2.CAP_PROP_POS_FRAMES)
+            if self.stop_frame and i > self.stop_frame:
+                break
 
             if i%self.every:
                 continue
