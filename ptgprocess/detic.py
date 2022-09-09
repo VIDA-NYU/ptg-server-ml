@@ -4,6 +4,7 @@ setup_logger()
 # import some common libraries
 import os
 import sys
+import numpy as np
 import torch
 from torch import nn
 
@@ -14,7 +15,7 @@ from detectron2.utils.visualizer import Visualizer, random_color, ColorMode
 from detectron2.data import MetadataCatalog
 
 # Detic libraries
-detic_path = '/home/iran/ptg-demo/Detic'
+detic_path = os.getenv('DETIC_PATH') or 'Detic'
 sys.path.insert(0,  detic_path)
 sys.path.insert(0, os.path.join(detic_path, 'third_party/CenterNet2'))
 from detic.config import add_detic_config
@@ -82,8 +83,6 @@ class Detic(nn.Module):
             except AttributeError:
                 pass
 
-            self.labels = metadata.thing_classes
-
             self.prompt = prompt = prompt or '{}'
             self.text_features = classifier = self.text_encoder(
                 [prompt.format(x) for x in vocab]
@@ -94,7 +93,7 @@ class Detic(nn.Module):
             self.metadata = metadata = MetadataCatalog.get(BUILDIN_METADATA_PATH[vocab])
             classifier = BUILDIN_CLASSIFIER[vocab]    
         
-        self.labels = metadata.thing_classes
+        self.labels = np.asarray(metadata.thing_classes)
         reset_cls_test(self.predictor.model, classifier, len(metadata.thing_classes))
 
     def forward(self, im):

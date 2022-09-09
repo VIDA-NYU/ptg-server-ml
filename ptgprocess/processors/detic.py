@@ -11,7 +11,7 @@ from ptgctl import holoframe
 from ptgctl.util import parse_epoch_time
 from ptgctl.pt3d import Points3D
 from .core import Processor
-from ..util import StreamReader, StreamWriter, ImageOutput, nowstring, draw_boxes
+from ..util import StreamReader, StreamWriter, ImageOutput, nowstring, draw_boxes, call_multiple_async
 from ..detic import Detic
 
 
@@ -49,7 +49,7 @@ class Detic3D(Processor):
         if out_file is True:
             out_file = os.path.join(store_dir or self.STORE_DIR, replay or nowstring(), f'{self.output_prefix}.mp4')
 
-        async with StreamReader(self.api, in_sids + [recipe_sid], recording_id=replay, fullspeed=fullspeed, raw_ts=True, **kw) as reader, \
+        async with StreamReader(self.api, in_sids, [recipe_sid], recording_id=replay, fullspeed=fullspeed, raw_ts=True, **kw) as reader, \
                    StreamWriter(self.api, out_sids, test=test) as writer, \
                    ImageOutput(out_file, fps, fixed_fps=True, show=show) as imout:
             async def _stream():
@@ -111,7 +111,8 @@ class Detic3D(Processor):
                         ]), parse_epoch_time(mts))
 
             # this lets us do two things at once
-            await asyncio.gather(_stream(), reader.watch_replay())
+            #await asyncio.gather(_stream(), reader.watch_replay())
+            await call_multiple_async(_stream(), reader.watch_replay())
 
     def change_recipe(self, recipe_id):
         if not recipe_id:
@@ -121,8 +122,14 @@ class Detic3D(Processor):
         self.model.set_vocab([w for k in ['tools_simple', 'ingredients_simple'] for w in recipe[k]])
 
     def predict(self, im):
-        outputs = self.model(im)['instances']
-        return outputs['boxes'].tensor.detach(), outputs['scores'].detach(), outputs['class_ids'].detach(), outputs['labels'].detach()
+        outputs = self.model(im)
+        insts = outputs["instances"].to("cpu")
+        xyxy = insts.pred_boxes.tensor.numpy()
+        class_ids = insts.pred_classes.numpy().astype(int)
+        confs = insts.scores.numpy()
+        print(class_ids)
+        labels = self.model.labels[class_ids]
+        return xyxy, confs, class_ids, labels
 
     def get_pts3d(self, main, depthlt, depthltCal):
         return Points3D(
