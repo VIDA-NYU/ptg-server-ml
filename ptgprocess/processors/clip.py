@@ -18,29 +18,17 @@ class ZeroClipProcessor(Processor):
     prompts = {
         # 'tools': 'a photo of a {}',
         # 'ingredients': 'a photo of a {}',
-        'steps': '{}',
+        'steps_simple': '{}',
     }
+    key_map = {'steps_simple': 'steps'}
     STORE_DIR = 'post'
 
     Model = ZeroClip
 
     async def call_async(self, recipe_id=None, *a, **kw):
-        recipe_id = self.api.sessions.current_recipe()
-        while not recipe_id:
-            print("waiting for recipe to be activated")
-            recipe_id = await self._watch_recipe_id(recipe_id)
-        await self._call_async(recipe_id, *a, **kw)
-        return
-        
         if recipe_id:
             print("explicitly set recipe ID", recipe_id)
             return await self._call_async(recipe_id, *a, **kw)
-
-
-
-
-
-
 
         recipe_id = self.api.sessions.current_recipe()
         while not recipe_id:
@@ -48,9 +36,11 @@ class ZeroClipProcessor(Processor):
             recipe_id = await self._watch_recipe_id(recipe_id)
         print("Starting recipe:", recipe_id)
         
-        t = asyncio.create_task(self._call_async(recipe_id, *a, **kw))
+        #t = asyncio.create_task(self._call_async(recipe_id, *a, **kw))
+        t = asyncio.create_task(self._watch_recipe_id(recipe_id))
         try:
-            await self._watch_recipe_id(recipe_id)
+            await self._call_async(recipe_id, *a, **kw)
+            #await self._watch_recipe_id(recipe_id)
         finally:
             if not t.done():
                 t.cancel()
@@ -84,7 +74,7 @@ class ZeroClipProcessor(Processor):
                 f'{self.__class__.__name__}-{self.output_prefix}.mp4')
 
         out_keys = set(texts)
-        out_sids = [f'{replay or ""}{self.output_prefix}:{k}' for k in out_keys]
+        out_sids = [f'{replay or ""}{self.output_prefix}:{self.key_map.get(k, k)}' for k in out_keys]
         async with StreamReader(self.api, ['main'], recording_id=replay, fullspeed=fullspeed) as reader, \
                    StreamWriter(self.api, out_sids, test=test) as writer, \
                    ImageOutput(out_file, fps, fixed_fps=True, show=show) as imout:
