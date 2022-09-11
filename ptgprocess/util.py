@@ -101,8 +101,9 @@ class StreamReader(Context):
         from ptgctl import holoframe
         from ptgctl.util import parse_epoch_time
         pbar = tqdm.tqdm()
+        tlast = None
         while self.running:
-            pbar.set_description('getting data...')
+            pbar.set_description('waiting for data...')
             data = await self.ws.recv_data()
             pbar.set_description(f'got {len(data)}')
             if self.prefix:
@@ -112,11 +113,14 @@ class StreamReader(Context):
                 pbar.update()
             else:
                 for sid, t, x in data:
+                    tp = parse_epoch_time(t)
+                    pbar.set_description(f'{sid} {time.time() - tp:.2f}s old' +(f' - {tp-tlast:.3f}s since last' if tlast else ''))
                     yield (
                         (sid, t, x) if self.raw else 
                         (sid, t, holoframe.load(x)) if self.raw_ts else
-                        (sid, parse_epoch_time(t), holoframe.load(x)))
+                        (sid, tp, holoframe.load(x)))
                     pbar.update()
+                    tlast = tp
 
 
 class StreamWriter(Context):
