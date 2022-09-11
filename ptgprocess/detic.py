@@ -79,8 +79,8 @@ class Detic(nn.Module):
             self.metadata = metadata = MetadataCatalog.get(self.vocab_key)
             try:
                 metadata.thing_classes = list(vocab)
-                metadata.thing_colors = [random_color(rgb=True, maximum=1) for _ in metadata.thing_classes]
-            except AttributeError:
+                metadata.thing_colors = [tuple(random_color(rgb=True, maximum=1)) for _ in metadata.thing_classes]
+            except (AttributeError, AssertionError):
                 pass
 
             self.prompt = prompt = prompt or '{}'
