@@ -29,4 +29,6 @@ class Processor:
             except Exception as e:
                 if not continuous:
                     raise
-                print(f'{type(e).__name__}: {e}')
+                import traceback
+                traceback.print_exc()
+                #print(f'{type(e).__name__}: {e}')

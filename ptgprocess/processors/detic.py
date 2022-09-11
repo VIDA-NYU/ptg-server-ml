@@ -15,9 +15,7 @@ from ..util import StreamReader, StreamWriter, ImageOutput, nowstring, draw_boxe
 from ..detic import Detic
 
 
-DEFAULT_VOCAB = [
-    'laptop', 'water bottle',
-]
+DEFAULT_VOCAB = 'lvis'
 
 
 class Detic3D(Processor):
@@ -55,6 +53,8 @@ class Detic3D(Processor):
             async def _stream():
                 data = holoframe.load_all(self.api.data('depthltCal'))
                 self.data.update(data)
+
+                self.change_recipe(self.api.sessions.current_recipe())
 
                 async for sid, t, x in reader:
                     # watch for recipe changes
@@ -116,8 +116,10 @@ class Detic3D(Processor):
 
     def change_recipe(self, recipe_id):
         if not recipe_id:
+            print('no recipe. using default vocab:', DEFAULT_VOCAB)
             self.model.set_vocab(DEFAULT_VOCAB)
             return
+        print('using recipe', recipe_id)
         recipe = self.api.recipes.get(recipe_id)
         self.model.set_vocab([w for k in ['tools_simple', 'ingredients_simple'] for w in recipe[k]])
 
@@ -127,7 +129,6 @@ class Detic3D(Processor):
         xyxy = insts.pred_boxes.tensor.numpy()
         class_ids = insts.pred_classes.numpy().astype(int)
         confs = insts.scores.numpy()
-        print(class_ids)
         labels = self.model.labels[class_ids]
         return xyxy, confs, class_ids, labels
 
