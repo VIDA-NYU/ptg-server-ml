@@ -4,6 +4,7 @@ from ..util import maybe_profile
 
 
 class Processor:
+    ERROR_DELAY = 3
     def __init__(self, api=None):
         name = self.__class__.__name__
         if api is not False:
@@ -29,4 +30,7 @@ class Processor:
             except Exception as e:
                 if not continuous:
                     raise
-                print(f'{type(e).__name__}: {e}')
+                import traceback
+                traceback.print_exc()
+                #print(f'{type(e).__name__}: {e}')
+                asyncio.sleep(self.ERROR_DELAY)

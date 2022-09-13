@@ -4,6 +4,7 @@ import functools
 from typing import AsyncIterator, cast
 import os
 import time
+import asyncio
 import contextlib
 import datetime
 import tqdm
@@ -53,8 +54,8 @@ class Context:
 
 
 class StreamReader(Context):
-    def __init__(self, api, streams, recording_id=None, prefix=None, raw=False, raw_ts=False, progress=True, merged=False, **kw):
-        super().__init__(streams=streams, **kw)
+    def __init__(self, api, streams, unprefixed_streams=None, recording_id=None, prefix=None, raw=False, raw_ts=False, progress=True, merged=False, **kw):
+        super().__init__(streams=streams, unprefixed_streams=unprefixed_streams, **kw)
         self.api = api
         self.recording_id = recording_id
         self.prefix = prefix or (f'{recording_id}:' if recording_id else None)
@@ -63,17 +64,17 @@ class StreamReader(Context):
         self.merged = merged
         self.progress = progress
 
-    async def acontext(self, streams, fullspeed=None, last=None, replay_pull_timeout=5000) -> 'AsyncIterator[StreamReader]':
+    async def acontext(self, streams, unprefixed_streams=None, fullspeed=None, last=None, replay_pull_timeout=5000) -> 'AsyncIterator[StreamReader]':
         self.replayer = self._replay_task = None
         rid = self.recording_id
         if rid:
             async with self.api.recordings.replay_connect(
                     rid, '+'.join(streams), 
                     fullspeed=fullspeed, 
-                    prefix=f'{self.prefix}:'
+                    prefix=f'{self.prefix}'
             ) as self.replayer:
                 self._replay_task = asyncio.create_task(self.watch_replay())
-                streams = [f'{self.prefix}:{s}' for s in streams]
+                streams = [f'{self.prefix}{s}' for s in streams] + list(unprefixed_streams or [])
                 async with self.api.data_pull_connect('+'.join(streams), last=last, timeout=replay_pull_timeout) as self.ws:
                     yield self
             if not self._replay_task.done():
@@ -83,7 +84,7 @@ class StreamReader(Context):
             self.pbar = None
             return
 
-        async with self.api.data_pull_connect('+'.join(streams), last=last) as self.ws:
+        async with self.api.data_pull_connect('+'.join(streams + list(unprefixed_streams or [])), last=last) as self.ws:
             yield self
         self.pbar = None
 
@@ -100,22 +101,26 @@ class StreamReader(Context):
         from ptgctl import holoframe
         from ptgctl.util import parse_epoch_time
         pbar = tqdm.tqdm()
+        tlast = None
         while self.running:
-            pbar.set_description('getting data...')
+            pbar.set_description('waiting for data...')
             data = await self.ws.recv_data()
             pbar.set_description(f'got {len(data)}')
             if self.prefix:
-                data = [(sid[len(self.prefix)+1:], t, x) for (sid, t, x) in data]
+                data = [(sid[len(self.prefix):] if sid.startswith(self.prefix) else sid, t, x) for (sid, t, x) in data]
             if self.merged:
                 yield holoframe.load_all(data)
                 pbar.update()
             else:
                 for sid, t, x in data:
+                    tp = parse_epoch_time(t)
+                    pbar.set_description(f'{sid} {time.time() - tp:.2f}s old' +(f' - {tp-tlast:.3f}s since last' if tlast else ''))
                     yield (
                         (sid, t, x) if self.raw else 
                         (sid, t, holoframe.load(x)) if self.raw_ts else
-                        (sid, parse_epoch_time(t), holoframe.load(x)))
+                        (sid, tp, holoframe.load(x)))
                     pbar.update()
+                    tlast = tp
 
 
 class StreamWriter(Context):
@@ -363,6 +368,18 @@ def maybe_profile(func, min_time=20):
                 p.print()
     return inner
 
+
+
+async def call_multiple_async(primary_task, *tasks):
+    tasks = [asyncio.create_task(t) for t in tasks]
+    try:
+        await primary_task
+    finally:
+        for t in tasks:
+            if not t.done():
+                t.cancel()
+            else:
+                t.result()
 
 
 
