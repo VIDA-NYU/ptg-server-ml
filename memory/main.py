@@ -22,7 +22,7 @@ class MemoryApp:
     async def run(self, prefix=None):
         prefix = prefix or ''
         input_sid = f'{prefix}detic:world'
-        output_sid = f'{prefix}detic:world:memory'
+        output_sid = f'{prefix}detic:memory'
 
         async with self.api.data_pull_connect(input_sid) as ws_pull, \
                    self.api.data_push_connect(output_sid, batch=True) as ws_push:
