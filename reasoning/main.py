@@ -1,6 +1,7 @@
 import os
 import time
 import orjson
+import asyncio
 import logging
 import ptgctl
 import ptgctl.holoframe
@@ -42,7 +43,7 @@ class ReasoningApp:
         prefix = prefix or ''
         input_sid = f'{prefix}clip:action:steps'
 
-        async with self.api.data_pull_connect([input_sid, self.RECIPE_SID, self.RECIPE_STEP_SID, self.SESSION_SID]) as ws_pull, \
+        async with self.api.data_pull_connect([input_sid, self.RECIPE_SID, self.RECIPE_STEP_SID, self.SESSION_SID], rate_limit=1) as ws_pull, \
                    self.api.data_push_connect([f'{prefix}reasoning'], batch=True) as ws_push:
 
             recipe_id: str = self.api.sessions.current_recipe()
@@ -69,17 +70,17 @@ class ReasoningApp:
                     #if False: ## step changed
                     #    self.api.sessions.update_step(X)
 
-                    #time.sleep(2)
                     await ws_push.send_data([orjson.dumps(recipe_status)])
 
     @ptgctl.util.async2sync
-    async def run(self, prefix=None, top=5):
+    async def run(self, *a, **kw):
         while True:
             try:
                 await self._run(*a, **kw)
             except Exception as e:
                 import traceback
                 traceback.print_exc()
+                await asyncio.sleep(3)
 
 
 if __name__ == '__main__':
