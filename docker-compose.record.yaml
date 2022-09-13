@@ -1,0 +1,55 @@
+version: '3'
+
+x-loki-logging: &lokilogging
+  driver: json-file
+  options:
+    tag: "{{.Name}}"
+
+services:
+
+  raw_recorder:
+    image: ptgprocess
+    container_name: raw_recorder
+    restart: unless-stopped
+    networks:
+      - ptg
+    volumes:
+      - ${VOLUMES}/recordings/raw:/src/recordings
+    command: -m ptgprocess.processors.record raw run --continuous
+
+  video_recorder:
+    image: ptgprocess
+    container_name: video_recorder
+    restart: unless-stopped
+    networks:
+      - ptg
+    volumes:
+      - ${VOLUMES}/recordings/post:/src/recordings
+    command: -m ptgprocess.processors.record video run --continuous
+
+  audio_recorder:
+    image: ptgprocess
+    container_name: audio_recorder
+    restart: unless-stopped
+    networks:
+      - ptg
+    volumes:
+      - ${VOLUMES}/recordings/post:/src/recordings
+    command: -m ptgprocess.processors.record audio run --continuous
+
+  json_recorder:
+    image: ptgprocess
+    container_name: json_recorder
+    restart: unless-stopped
+    networks:
+      - ptg
+    volumes:
+      - ${VOLUMES}/recordings/post:/src/recordings
+    command: -m ptgprocess.processors.record json run --continuous
+
+
+# connect these containers to the server containers
+networks:
+  ptg:
+    external: true
+    name: ptg-api-server_default
