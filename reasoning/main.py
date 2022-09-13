@@ -17,6 +17,9 @@ configs = {'rule_classifier_path': '/src/app/recipe_tagger',
 
 
 class ReasoningApp:
+    RECIPE_SID = 'event:recipe:id'
+    RECIPE_STEP_SID = 'event:recipe:step'
+    SESSION_SID = 'event:session:id'
 
     def __init__(self):
         self.api = ptgctl.CLI(username=os.getenv('API_USER') or 'reasoning',
@@ -24,31 +27,59 @@ class ReasoningApp:
 
         self.state_manager = StateManager(configs)
 
-    @ptgctl.util.async2sync
-    async def run(self, prefix=None):
-        prefix = prefix or ''
-        input_sid = f'{prefix}clip:action:steps'
+    def change_recipe(self, recipe_id):
+        if not recipe_id:
+            self.state_manager.reset()
+            return None, None
 
-        recipe_id: str = self.api.sessions.current_recipe()
         recipe = self.api.recipes.get(recipe_id)
         logger.info('Loaded recipe: %s' % str(recipe))
         step_data = self.state_manager.start_recipe(recipe)
         logger.info('First step: %s' % str(step_data))
-        top = 5
-        async with self.api.data_pull_connect(input_sid) as ws_pull, \
-                   self.api.data_push_connect([f'{prefix}reasoning'], batch=True) as ws_push:
-            while True:
-                time.sleep(2)  # Sleep n seconds
-                data = ptgctl.holoframe.load_all(await ws_pull.recv_data())
-                action_predictions = data[input_sid]
-                action_predictions.pop('timestamp', None)
-                action_predictions.pop('frame_type', None)
-                top_actions = sorted(action_predictions.items(), key=lambda x: x[1], reverse=True)[:top]
-                logger.info('Perception outputs: %s' % str(top_actions))
-                recipe_status = self.state_manager.check_status([i[0] for i in top_actions])
-                logger.info('Reasoning outputs: %s' % str(recipe_status))
+        return step_data, recipe
 
-                await ws_push.send_data([orjson.dumps(recipe_status)])
+    async def _run(self, prefix=None, top=5):
+        prefix = prefix or ''
+        input_sid = f'{prefix}clip:action:steps'
+
+        async with self.api.data_pull_connect([input_sid, self.RECIPE_SID, self.RECIPE_STEP_SID, self.SESSION_SID]) as ws_pull, \
+                   self.api.data_push_connect([f'{prefix}reasoning'], batch=True) as ws_push:
+
+            recipe_id: str = self.api.sessions.current_recipe()
+            step_data, recipe = self.change_recipe(recipe_id)
+
+            while True:
+                for sid, timestamp, data in await ws_pull.recv_data():
+                    if sid == self.RECIPE_SID:
+                        self.change_recipe(data.decode('utf-8'))
+                        continue
+                    if sid == self.RECIPE_STEP_SID:
+                        #self.override_recipe_step(int(data))
+                        continue
+                    if sid == self.SESSION_SID:
+                        self.state_manager.reset()
+                        continue
+
+                    action_predictions = orjson.loads(data)
+                    top_actions = sorted(action_predictions.items(), key=lambda x: x[1], reverse=True)[:top]
+                    logger.info('Perception outputs: %s' % str(top_actions))
+                    recipe_status = self.state_manager.check_status([i[0] for i in top_actions])
+                    logger.info('Reasoning outputs: %s' % str(recipe_status))
+
+                    #if False: ## step changed
+                    #    self.api.sessions.update_step(X)
+
+                    #time.sleep(2)
+                    await ws_push.send_data([orjson.dumps(recipe_status)])
+
+    @ptgctl.util.async2sync
+    async def run(self, prefix=None, top=5):
+        while True:
+            try:
+                await self._run(*a, **kw)
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
 
 
 if __name__ == '__main__':
