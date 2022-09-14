@@ -34,7 +34,7 @@ class ReId:
 
     def memory_comparison(self, seen, candidate):
         '''Compare a new instance to a previous one. Determine if they match.'''
-        return np.linalg.norm(candidate - seen) < 2
+        return np.linalg.norm(candidate - seen) < 1
 
 
 class DrawResults:
