@@ -1,3 +1,9 @@
+"""
+Author Jianzhe Lin
+May.2, 2020
+"""
+import cv2
+import matplotlib.pyplot as plt
 import os
 import orjson
 import logging
@@ -5,17 +11,8 @@ import numpy as np
 import ptgctl
 import ptgctl.holoframe
 import ptgctl.util
-import re_id
 from collections import defaultdict
 
-"""
-Author Jianzhe Lin
-May.2, 2020
-"""
-from collections import defaultdict
-import numpy as np
-import cv2
-import matplotlib.pyplot as plt
 
 
 class ReId:
