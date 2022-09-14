@@ -31,7 +31,7 @@ class MemoryApp:
                     objects = orjson.loads(data)
 
                     for obj in objects:
-                        label, seen_before = self.re_id.update_memory(np.asarray(obj['xyz_center']), obj['labels'])
+                        label, seen_before = self.re_id.update_memory(np.asarray(obj['xyz_center']), obj['label'])
                         obj['track_id'] = label
                         obj['seen_before'] = seen_before
 

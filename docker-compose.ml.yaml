@@ -18,3 +18,8 @@ services:
     container_name: reasoning
     restart: unless-stopped
 
+  memory:
+    build: ./memory
+    container_name: memory
+    restart: unless-stopped
+
