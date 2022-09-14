@@ -6,6 +6,7 @@ import ptgctl
 import ptgctl.holoframe
 import ptgctl.util
 import re_id
+from collections import defaultdict
 
 logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(name)s:%(message)s')
 logger = logging.getLogger(__name__)
@@ -17,7 +18,8 @@ class MemoryApp:
         self.api = ptgctl.API(username=os.getenv('API_USER') or 'memory',
                               password=os.getenv('API_PASS') or 'memory')
         self.re_id = re_id.ReId()
-
+        self.location_memory = {}
+        self.instance_count = defaultdict(lambda:0)
     @ptgctl.util.async2sync
     async def run(self, prefix=None):
         prefix = prefix or ''
