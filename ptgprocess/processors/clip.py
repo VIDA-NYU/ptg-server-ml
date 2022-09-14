@@ -92,18 +92,18 @@ class ZeroClipProcessor(Processor):
 
         out_keys = set(self.texts)
         out_sids = [f'{replay or ""}{self.output_prefix}:{self.key_map.get(k, k)}' for k in out_keys]
-        async with StreamReader(self.api, ['main'], [self.RECIPE_SID], recording_id=replay, fullspeed=fullspeed, raw=True) as reader, \
+        async with StreamReader(self.api, ['main'], [self.RECIPE_SID], recording_id=replay, fullspeed=fullspeed, ack=True, raw=True) as reader, \
                    StreamWriter(self.api, out_sids, test=test) as writer, \
                    ImageOutput(out_file, fps, fixed_fps=True, show=show) as imout:
             async for sid, t, d in reader:
                 # monitor the recipe
                 if sid == self.RECIPE_SID:
-                    print("recipe changed", recipe_id, '->', d)
+                    print("recipe changed", recipe_id, '->', d, flush=True)
                     if not d: break
                     self.set_vocab(d.decode('utf-8'))
                     continue
                 if not self.texts:
-                    print("no text to compare to")
+                    print("no text to compare to", flush=True)
                     break
 
                 # encode the image and compare to text queries

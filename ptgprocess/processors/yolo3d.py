@@ -47,8 +47,11 @@ class Yolo3D(Processor):
         if out_file is True:
             out_file = os.path.join(store_dir or self.STORE_DIR, replay or nowstring(), f'{self.output_prefix}.mp4')
 
-        async with StreamReader(self.api, in_sids, recording_id=replay, fullspeed=fullspeed, merged=True) as reader, \
-                   StreamWriter(self.api, out_sids, test=test) as writer, \
+        raw_src = None
+        output_writer = None
+
+        async with StreamReader(self.api, in_sids, recording_id=replay, raw_src=raw_src, fullspeed=fullspeed, merged=True) as reader, \
+                   StreamWriter(self.api, out_sids, writer=output_writer, test=test) as writer, \
                    ImageOutput(out_file, fps, fixed_fps=True, show=show) as imout:
             async def _stream():
                 data = holoframe.load_all(self.api.data('depthltCal'))
@@ -102,7 +105,7 @@ class Yolo3D(Processor):
                         self.dump(
                             self.world_box_keys, 
                             [x[valid] for x in [xyz_center, xyz_top, confs, class_ids, labels]]),
-                    ])
+                    ], t)
                     if imout.active:
                         imout.output(draw_boxes(cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR), xyxy, [
                             f'{l} {c:.0%} [{x:.0f},{y:.0f},{z:.0f}]' 
