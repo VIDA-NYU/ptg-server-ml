@@ -61,18 +61,18 @@ services:
       - ${VOLUMES}/models/pretrained-clip/:/root/.cache/clip
     restart: unless-stopped
     command: -m ptgprocess.processors.clip action2 run --continuous
-
-  yolo3d:
-    image: ptgprocess
-    container_name: yolo
-    networks:
-      - ptg
-    restart: unless-stopped
-    volumes:
-      - ${VOLUMES}/models:/src/app/models
-    command: -m ptgprocess.processors.yolo3d run --continuous
-    environment:
-      MODEL_DIR: /src/app/models
+      #-c 'import time;time.sleep(60*60)' #
+      # yolo3d:
+      #   image: ptgprocess
+      #   container_name: yolo
+      #   networks:
+      #     - ptg
+      #   restart: unless-stopped
+      #   volumes:
+      #     - ${VOLUMES}/models:/src/app/models
+      #   command: -m ptgprocess.processors.yolo3d run --continuous
+      #   environment:
+      #     MODEL_DIR: /src/app/models
 
 
   # reasoning:

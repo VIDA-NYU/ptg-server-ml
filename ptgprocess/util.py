@@ -64,7 +64,7 @@ class StreamReader(Context):
         self.merged = merged
         self.progress = progress
 
-    async def acontext(self, streams, unprefixed_streams=None, fullspeed=None, last=None, replay_pull_timeout=5000) -> 'AsyncIterator[StreamReader]':
+    async def acontext(self, streams, unprefixed_streams=None, fullspeed=None, last=None, ack=False, replay_pull_timeout=5000, **kw) -> 'AsyncIterator[StreamReader]':
         self.replayer = self._replay_task = None
         rid = self.recording_id
         if rid:
@@ -75,7 +75,7 @@ class StreamReader(Context):
             ) as self.replayer:
                 self._replay_task = asyncio.create_task(self.watch_replay())
                 streams = [f'{self.prefix}{s}' for s in streams] + list(unprefixed_streams or [])
-                async with self.api.data_pull_connect('+'.join(streams), last=last, timeout=replay_pull_timeout) as self.ws:
+                async with self.api.data_pull_connect('+'.join(streams), last=last, ack=ack, timeout=replay_pull_timeout, **kw) as self.ws:
                     yield self
             if not self._replay_task.done():
                 self._replay_task.cancel()
@@ -84,7 +84,7 @@ class StreamReader(Context):
             self.pbar = None
             return
 
-        async with self.api.data_pull_connect('+'.join(streams + list(unprefixed_streams or [])), last=last) as self.ws:
+        async with self.api.data_pull_connect('+'.join(streams + list(unprefixed_streams or [])), ack=ack, last=last, **kw) as self.ws:
             yield self
         self.pbar = None
 

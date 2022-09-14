@@ -33,4 +33,4 @@ class Processor:
                 import traceback
                 traceback.print_exc()
                 #print(f'{type(e).__name__}: {e}')
-                asyncio.sleep(self.ERROR_DELAY)
+                await asyncio.sleep(self.ERROR_DELAY)
