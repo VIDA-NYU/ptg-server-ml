@@ -63,10 +63,10 @@ class ReasoningApp:
                     await ws_push.send_data([orjson.dumps(recipe_status)])
 
     @ptgctl.util.async2sync
-    async def run(self, *a, **kw):
+    async def run(self, *args, **kwargs):
         while True:
             try:
-                await self.run_reasoning(*a, **kw)
+                await self.run_reasoning(*args, **kwargs)
             except Exception:
                 import traceback
                 traceback.print_exc()
@@ -76,3 +76,4 @@ class ReasoningApp:
 if __name__ == '__main__':
     import fire
     fire.Fire(ReasoningApp)
+

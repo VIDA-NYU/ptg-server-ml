@@ -33,7 +33,7 @@ class VideoWriter(BaseWriter):
         super().__init__(**kw)
         fname = os.path.join(store_dir, f'{name}.mp4')
         
-        self.prev_im = sample['image'][:,:,::-1].tobytes()
+        self.prev_im = self.dump(sample['image'])
         self.t_start = t_start
         h, w = sample['image'].shape[:2]
 
@@ -67,8 +67,13 @@ class VideoWriter(BaseWriter):
             process.wait()
             print('finished')
 
+    def dump(self, im):
+        if im.ndim == 2:
+            im = np.broadcast_to(im[:,:,None], im.shape+(3,))
+        return im[:,:,::-1].tobytes()
+
     def write(self, data, ts=None):
-        im = data['image'][:,:,::-1].tobytes()
+        im = self.dump(data['image'])
         if ts is not None:
             while self.t < ts - self.t_start:
                 self.writer.write(self.prev_im)
@@ -88,7 +93,7 @@ class AudioWriter(BaseWriter):
         self.channels = x.shape[1] if x.ndim > 1 else 1
         self.lastpos = None
         import soundfile
-        print("Opening audio file:", self.fname)
+        print("Opening audio file:", self.fname, flush=True)
         with soundfile.SoundFile(self.fname, 'w', samplerate=sample['sr'], channels=self.channels) as self.sf:
             yield self
 
@@ -110,7 +115,7 @@ class JsonWriter(BaseWriter):
         
     def context(self, **kw):
         self.i = 0
-        print("Opening json file:", self.fname)
+        print("Opening json file:", self.fname, flush=True)
         with open(self.fname, 'wb') as self.fh:
             self.fh.write(b'[\n')
             try:
@@ -122,9 +127,14 @@ class JsonWriter(BaseWriter):
         if self.i:
             self.fh.write(b',\n')
         if ts is not None:
+            if isinstance(d, bytes):
+                d = orjson.loads(d)
+            if not isinstance(d, dict):
+                d = {'data': d}
             d['timestamp'] = ts
-        self.fh.write(orjson.dumps(
-            d, option=orjson.OPT_NAIVE_UTC | orjson.OPT_SERIALIZE_NUMPY))
+        if not isinstance(d, bytes):
+            d = orjson.dumps(d, option=orjson.OPT_NAIVE_UTC | orjson.OPT_SERIALIZE_NUMPY)
+        self.fh.write(d)
         self.i += 1
 
 

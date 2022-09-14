@@ -20,8 +20,8 @@ DEFAULT_VOCAB = 'lvis'
 
 class Detic3D(Processor):
     output_prefix = 'detic'
-    image_box_keys = ['xywhn', 'confidence', 'class_id', 'labels']
-    world_box_keys = ['xyz_center', 'xyz_top', 'confidence', 'class_id', 'labels']
+    image_box_keys = ['xyxyn', 'confidence', 'class_id', 'label']
+    world_box_keys = ['xyz_center', 'xyz_top', 'confidence', 'class_id', 'label']
     min_dist_secs = 1
     max_depth_dist = 7
     STORE_DIR = 'post'
@@ -59,6 +59,7 @@ class Detic3D(Processor):
                 async for sid, t, x in reader:
                     # watch for recipe changes
                     if sid == recipe_sid:
+                        await writer.write(b'[]', b'[]')
                         self.change_recipe(x)
                         continue
                     
@@ -86,8 +87,8 @@ class Detic3D(Processor):
                     xywhn = xyxy.copy()
                     xywhn[:, 0] = (xywhn[:, 0]) / w
                     xywhn[:, 1] = (xywhn[:, 1]) / h
-                    xywhn[:, 2] = (xywhn[:, 2] - xywhn[:, 0]) / w
-                    xywhn[:, 3] = (xywhn[:, 3] - xywhn[:, 1]) / h
+                    xywhn[:, 2] = (xywhn[:, 2]) / w
+                    xywhn[:, 3] = (xywhn[:, 3]) / h
 
                     # get 3d results
                     xyz_top, xyz_center, dist = pts3d.transform_center_top(xyxy)
