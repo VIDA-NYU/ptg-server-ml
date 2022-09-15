@@ -18,7 +18,7 @@ has_gpu = torch.cuda.is_available()
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 class Omnivore(nn.Module):
-    def __init__(self, n_frames=10, device=device):
+    def __init__(self, n_frames=10, vocab_subset=None, device=device):
         super().__init__()
         self.device = device = torch.device(device)
         self.model = model = torch.hub.load("facebookresearch/omnivore:main", model="omnivore_swinB_epic").to(device)
@@ -32,6 +32,12 @@ class Omnivore(nn.Module):
         import csv
         with open(os.path.abspath(os.path.join(__file__, '../data/epic_action_classes.csv')), 'r') as f:
             self.video_labels = [" ".join(rows) for rows in csv.reader(f)]
+        self.mask = None
+        if vocab_subset:
+            vocab_subset = set(vocab_subset)
+            self.mask = np.ones(len(self.video_labels))
+            self.mask[[l in vocab_subset for l in self.video_labels]] = 0
+        # print('vocab', self.video_labels)
 
         self.mean = [0.485, 0.456, 0.406]
         self.std = [0.229, 0.224, 0.225]
@@ -51,6 +57,8 @@ class Omnivore(nn.Module):
         # The model expects inputs of shape: B x C x T x H x W
         with torch.no_grad():
             prediction = self.model(input.to(self.device), input_type=input_type)
+            if self.mask is not None:
+                prediction[self.mask] = -torch.inf
             pred_classes = prediction.topk(k=k).indices
         return [cls_map[i] for i in pred_classes[0]]
 
