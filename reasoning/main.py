@@ -34,10 +34,11 @@ class ReasoningApp:
             logger.info('First step: %s' % str(step_data))
 
     async def run_reasoning(self, prefix='', top=5):
-        input_sid = f'{prefix}clip:action:steps'
+        perception_action_sid = f'{prefix}clip:action:steps'
+        perception_objects_sid = f'{prefix}detic:image'
         output_sid = f'{prefix}reasoning'
 
-        async with self.api.data_pull_connect([input_sid, RECIPE_SID, SESSION_SID], ack=True, rate_limit=1) as ws_pull, \
+        async with self.api.data_pull_connect([perception_action_sid, perception_action_sid, RECIPE_SID, SESSION_SID], ack=True) as ws_pull, \
                    self.api.data_push_connect([output_sid], batch=True) as ws_push:
 
             recipe_id = self.api.sessions.current_recipe()
@@ -54,13 +55,18 @@ class ReasoningApp:
                         logger.info('Recipe resetted')
                         continue
 
+                    if sid == perception_objects_sid:
+                        #objects = orjson.loads(data)
+                        #print('>>>>>>>>> objects', objects)
+                        continue
+
                     action_predictions = orjson.loads(data)
                     top_actions = sorted(action_predictions.items(), key=lambda x: x[1], reverse=True)[:top]
                     logger.info('Perception outputs: %s' % str(top_actions))
-                    recipe_status = self.state_manager.check_status([i[0] for i in top_actions])
+                    recipe_status = self.state_manager.check_status(top_actions)
                     logger.info('Reasoning outputs: %s' % str(recipe_status))
-
-                    await ws_push.send_data([orjson.dumps(recipe_status)])
+                    if recipe_status is not None:
+                        await ws_push.send_data([orjson.dumps(recipe_status)])
 
     @ptgctl.util.async2sync
     async def run(self, *args, **kwargs):
@@ -76,4 +82,3 @@ class ReasoningApp:
 if __name__ == '__main__':
     import fire
     fire.Fire(ReasoningApp)
-
