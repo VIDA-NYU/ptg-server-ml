@@ -140,14 +140,14 @@ class StreamWriter(Context):
         async with self.api.data_push_connect('+'.join(streams), batch=True) as self.ws:
             yield self
 
-    async def write(self, data, t=None):
+    async def write(self, data, sid=None, t=None):
         if self.test:
             print(data)
             return
         if self.writer:
             self.writer.write(data, t)
             return
-        await self.ws.send_data(data)
+        await self.ws.send_data(data, sid, t)
 
 
 class VideoOutput:#'avc1', 'mp4v', 
@@ -242,7 +242,7 @@ class VideoInput:
         if not cap.isOpened():
             raise RuntimeError(f"Could not open video source: {self.src}")
         self.src_fps = src_fps = cap.get(cv2.CAP_PROP_FPS)
-        self.every = int(src_fps/(self.dest_fps or src_fps))
+        self.every = max(1, round(src_fps/(self.dest_fps or src_fps)))
         size = self.size or (
             int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)),
             int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)))

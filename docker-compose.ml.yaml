@@ -4,22 +4,45 @@ services:
 
   # 
 
-  # actionclip:
-  #   image: ptgprocess
-  #   container_name: actionclip
-  #   volumes:
-  #     - ${VOLUMES}/models:/src/lib/ptgprocess/models
-  #     - ${VOLUMES}/models/pretrained-clip/:/root/.cache/clip
-  #   restart: unless-stopped
-  #   command: -m ptgprocess.processors.clip action2 run --continuous
-
-  reasoning:
-    build: ./reasoning
-    container_name: reasoning
+  actionclip:
+    image: ptgprocess
+    build: .
+    container_name: actionclip
+    volumes:
+      - ${VOLUMES}/models:/src/lib/ptgprocess/models
+      - ${VOLUMES}/models/pretrained-clip/:/root/.cache/clip
     restart: unless-stopped
+    command: -m ptgprocess.processors.clip action2 run --continuous
+    devices:
+     - /dev/nvidia1:/dev/nvidia0
+
+  omnivore:
+    image: ptgprocess
+    build: .
+    container_name: omnivore
+    volumes:
+      - ${VOLUMES}/models/torchhub:/root/.cache/torch/hub/checkpoints
+    restart: unless-stopped
+    command: -m ptgprocess.processors.omnivore run --continuous
+    devices:
+     - /dev/nvidia1:/dev/nvidia0
+
+  # reasoning:
+  #   build: ./reasoning
+  #   container_name: reasoning
+  #   restart: unless-stopped
+  #   volumes:
+  #     - ${VOLUMES}/models:/src/app/models
+  #   devices:
+  #    - /dev/nvidia1:/dev/nvidia0
 
   memory:
     build: ./memory
     container_name: memory
+    restart: unless-stopped
+
+  in3d:
+    build: ./in3d
+    container_name: in3d
     restart: unless-stopped
 

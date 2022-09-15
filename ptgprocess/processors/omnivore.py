@@ -37,24 +37,16 @@ class OmnivoreProcessor(Processor):
                    StreamWriter(self.api, ['omnivore:actions'], test=test) as writer, \
                    ImageOutput(out_file, fps, fixed_fps=True, show=show) as imout:
             async for sid, t, d in reader:
-                # monitor the recipe
-                if sid == self.RECIPE_SID:
-                    print("recipe changed", recipe_id, '->', d, flush=True)
-                    if not d: break
-                    self.set_vocab(d.decode('utf-8'))
-                    continue
-                if not self.texts:
-                    print("no text to compare to", flush=True)
-                    break
-
-                # encode the image and compare to text queries
+                # compute
                 d = holoframe.load(d)
                 im = d['image']
                 y_pred = self.model(im)
                 outputs, _ = self.model.topk(y_pred)
 
+                #print(outputs)
+
                 # output
-                await writer.write([self.dump(outputs)])
+                await writer.write([self.dump(outputs.tolist())])
                 if imout.active:
                     imout.output(draw_text_list(cv2.cvtColor(im, cv2.COLOR_RGB2BGR), outputs, t))
 

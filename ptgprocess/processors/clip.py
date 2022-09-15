@@ -38,34 +38,12 @@ class ZeroClipProcessor(Processor):
         print("Starting recipe:", recipe_id)
         await self._call_async(recipe_id, *a, **kw)
         
-        # #t = asyncio.create_task(self._call_async(recipe_id, *a, **kw))
-        # t = asyncio.create_task(self._watch_recipe_id(recipe_id))
-        # try:
-        #     await self._call_async(recipe_id, *a, **kw)
-        #     #await self._watch_recipe_id(recipe_id)
-        # finally:
-        #     if not t.done():
-        #         t.cancel()
-        #     else:
-        #         t.result()
-
     async def _watch_recipe_id(self, recipe_id):
         async with self.api.data_pull_connect(self.RECIPE_SID) as ws:
             while True:
                 for sid, ts, data in (await ws.recv_data()):
                     if data != recipe_id:
                         return data
-
-    # async def _watch_recipe_id(self, recipe_id):
-    #     loop = asyncio.get_event_loop()
-    #     while True:
-    #         new_recipe_id, _ = await asyncio.gather(
-    #             loop.run_in_executor(None, self.api.sessions.current_recipe),
-    #             asyncio.sleep(3)
-    #         )
-    #         if new_recipe_id != recipe_id:
-    #             self.current_id = new_recipe_id
-    #             return new_recipe_id
 
     def set_vocab(self, recipe_id):
         if not recipe_id:

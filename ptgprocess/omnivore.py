@@ -38,7 +38,7 @@ class Omnivore(nn.Module):
             self.idx_map = np.array([labels.index(l) for l in vocab_subset])
             labels = vocab_subset
         # print('vocab', self.video_labels)
-        self.labels = labels
+        self.labels = np.array(labels)
 
         self.mean = [0.485, 0.456, 0.406]
         self.std = [0.229, 0.224, 0.225]
@@ -56,9 +56,9 @@ class Omnivore(nn.Module):
         ims = torch.stack(list(ims), dim=1)
         return self._predict(ims[None], 'video')
 
-    def forward(self, im, k=5):
+    def forward(self, im):
         self.add_image(im)
-        return self.predict_recent(k)
+        return self.predict_recent()
 
     def _predict(self, input, input_type):
         # The model expects inputs of shape: B x C x T x H x W
@@ -66,9 +66,9 @@ class Omnivore(nn.Module):
             return self.model(input.to(self.device), input_type=input_type)
 
     def topk(self, y_pred, k=5):
-        topk = torch.topk(y_pred, k=k)
-        labels = self.labels[topk.indices[0]]
-        return labels, topk.values[0]
+        topk, i = torch.topk(y_pred, k=k)
+        labels = self.labels[i[0]]
+        return labels, topk[0]
 
 
 def short_side_scale(x, size):

@@ -10,8 +10,8 @@ logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(name)s:%(message
 logger = logging.getLogger(__name__)
 #ptgctl.log.setLevel('WARNING')
 
-configs = {'rule_classifier_path': '/src/app/recipe_tagger',
-           'bert_classifier_path': '/src/app/bert_classifier'}
+configs = {'rule_classifier_path': '/src/app/models/recipe_tagger',
+           'bert_classifier_path': '/src/app/models/bert_classifier'}
 
 RECIPE_SID = 'event:recipe:id'
 SESSION_SID = 'event:session:id'
@@ -37,7 +37,7 @@ class ReasoningApp:
         input_sid = f'{prefix}clip:action:steps'
         output_sid = f'{prefix}reasoning'
 
-        async with self.api.data_pull_connect([input_sid, RECIPE_SID, SESSION_SID], rate_limit=1) as ws_pull, \
+        async with self.api.data_pull_connect([input_sid, RECIPE_SID, SESSION_SID], ack=True, rate_limit=1) as ws_pull, \
                    self.api.data_push_connect([output_sid], batch=True) as ws_push:
 
             recipe_id = self.api.sessions.current_recipe()
