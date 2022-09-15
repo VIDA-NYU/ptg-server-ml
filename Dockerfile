@@ -3,7 +3,7 @@ FROM ptgctl
 ENV DIR=/src/lib/ptgprocess
 
 RUN apt-get -q update && \
-    apt-get install -y ffmpeg \
+    apt-get install -y ffmpeg gcc \
     && rm -rf /var/lib/apt/lists/*
 RUN pip install --no-cache-dir -U torch torchvision
 

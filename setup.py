@@ -10,6 +10,7 @@ deps = {
         'clip @ git+https://github.com/openai/CLIP.git@main#egg=clip',
     ],
     'yolo': IMAGE_DEPS+['torch'],
+    'omnivore': ['hydra-core', 'einops', 'iopath', 'timm'],
 }
 
 setuptools.setup(

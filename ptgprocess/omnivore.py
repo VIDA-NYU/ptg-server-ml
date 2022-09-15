@@ -5,6 +5,7 @@ import itertools
 DIR = pathlib.Path(__file__).parent
 import os
 import cv2
+import tqdm
 import numpy as np
 import torch
 from torch import nn
@@ -31,36 +32,43 @@ class Omnivore(nn.Module):
         # Create an id to label name mapping
         import csv
         with open(os.path.abspath(os.path.join(__file__, '../data/epic_action_classes.csv')), 'r') as f:
-            self.video_labels = [" ".join(rows) for rows in csv.reader(f)]
+            labels = [" ".join(rows) for rows in csv.reader(f)]
         self.mask = None
         if vocab_subset:
-            vocab_subset = set(vocab_subset)
-            self.mask = np.ones(len(self.video_labels))
-            self.mask[[l in vocab_subset for l in self.video_labels]] = 0
+            self.idx_map = np.array([labels.index(l) for l in vocab_subset])
+            labels = vocab_subset
         # print('vocab', self.video_labels)
+        self.labels = labels
 
         self.mean = [0.485, 0.456, 0.406]
         self.std = [0.229, 0.224, 0.225]
 
-    def forward(self, im, k=5):
+    def add_image(self, im):
         # 1,C,H,W
         im = torch.as_tensor(im.transpose(2, 0, 1)[None], device=self.device)
         im = FV.normalize(short_side_scale(im/255, 224), self.mean, self.std)
         # im_crops = [uniform_crop(im, 224, i)[0] for i in [0,1,2]]
         self.q.append(im[0])
+
+    def predict_recent(self):
         # T,C,H,W
         ims = itertools.islice(itertools.cycle(self.q), self.n_frames)
         ims = torch.stack(list(ims), dim=1)
-        return self._predict_top_k(ims[None], 'video', self.video_labels, k=k)
+        return self._predict(ims[None], 'video')
 
-    def _predict_top_k(self, input, input_type, cls_map, k=5):
+    def forward(self, im, k=5):
+        self.add_image(im)
+        return self.predict_recent(k)
+
+    def _predict(self, input, input_type):
         # The model expects inputs of shape: B x C x T x H x W
         with torch.no_grad():
-            prediction = self.model(input.to(self.device), input_type=input_type)
-            if self.mask is not None:
-                prediction[self.mask] = -torch.inf
-            pred_classes = prediction.topk(k=k).indices
-        return [cls_map[i] for i in pred_classes[0]]
+            return self.model(input.to(self.device), input_type=input_type)
+
+    def topk(self, y_pred, k=5):
+        topk = torch.topk(y_pred, k=k)
+        labels = self.labels[topk.indices[0]]
+        return labels, topk.values[0]
 
 
 def short_side_scale(x, size):
@@ -82,9 +90,9 @@ def uniform_crop(images, size, spatial_idx, boxes=None, scale_size=None):
     return images[:, :, y_offset:y_offset + size, x_offset:x_offset + size]
 
 
-def run(src, out_file=None, fps=10, stride=1, show=None):
+def run(src, n_frames=30, out_file=None, fps=10, stride=1, show=None):
     from ptgprocess.util import VideoInput, VideoOutput, draw_text_list
-    model = Omnivore()
+    model = Omnivore(n_frames=n_frames)
 
     if out_file is True:
         out_file='omnivore_'+os.path.basename(src)
@@ -94,9 +102,11 @@ def run(src, out_file=None, fps=10, stride=1, show=None):
         topk = []
         for i, (t, im) in enumerate(vin):
             im = cv2.resize(im, (600, 400))
+            model.add_image(im)
             if not i % stride:
-                topk = model(im)
-                print(topk)
+                y_pred = model.predict_recent()
+                topk, y_top = model.top_k(y_pred)
+                tqdm.tqdm.write(f'top: {topk}')
             imout.output(draw_text_list(im, topk)[0])
 
 if __name__ == '__main__':
