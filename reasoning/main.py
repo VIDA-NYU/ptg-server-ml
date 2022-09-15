@@ -38,7 +38,7 @@ class ReasoningApp:
         perception_objects_sid = f'{prefix}detic:image'
         output_sid = f'{prefix}reasoning'
 
-        async with self.api.data_pull_connect([perception_action_sid, perception_action_sid, RECIPE_SID, SESSION_SID], ack=True) as ws_pull, \
+        async with self.api.data_pull_connect([perception_action_sid, perception_objects_sid, RECIPE_SID, SESSION_SID], ack=True) as ws_pull, \
                    self.api.data_push_connect([output_sid], batch=True) as ws_push:
 
             recipe_id = self.api.sessions.current_recipe()
