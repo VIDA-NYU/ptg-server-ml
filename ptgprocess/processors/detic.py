@@ -40,14 +40,14 @@ class Detic3D(Processor):
         prefix = prefix or ''
         out_prefix = f'{prefix}{self.output_prefix}'
         self.in_sids = in_sids = ['main', 'depthlt', 'depthltCal']
-        out_sids = [f'{out_prefix}:image', f'{out_prefix}:world']
+        out_sids = [f'{out_prefix}:image', f'{out_prefix}:world', 'pointcloud']
         recipe_sid = 'event:recipe:id'
 
         # optional output video
         if out_file is True:
             out_file = os.path.join(store_dir or self.STORE_DIR, replay or nowstring(), f'{self.output_prefix}.mp4')
 
-        async with StreamReader(self.api, in_sids, [recipe_sid], recording_id=replay, fullspeed=fullspeed, raw_ts=True, **kw) as reader, \
+        async with StreamReader(self.api, in_sids, [recipe_sid], recording_id=replay, fullspeed=fullspeed, raw_ts=True, ack=True, **kw) as reader, \
                    StreamWriter(self.api, out_sids, test=test) as writer, \
                    ImageOutput(out_file, fps, fixed_fps=True, show=show) as imout:
             async def _stream():
@@ -77,7 +77,7 @@ class Detic3D(Processor):
                     
                     # get 3d transformer
                     main, depth, depthcal = [self.data[k] for k in in_sids]
-                    mts, = [self.ts[k] for k in in_sids[:1]]
+                    mts, dts = [self.ts[k] for k in in_sids[:2]]
                     pts3d = self.get_pts3d(main, depth, depthcal)
 
                     # extract ml info
@@ -102,6 +102,11 @@ class Detic3D(Processor):
                         self.dump(
                             self.world_box_keys, 
                             [x[valid] for x in [xyz_center, xyz_top, confs, class_ids, labels]]),
+                        jsondump({
+                            'timestamp': dts, 
+                            'color': (pts3d.rgb * 255).astype('uint8'),
+                            'xyz_world': pts3d.xyz_depth_world,
+                        }),
                     ])
 
                     # optional video display
@@ -137,12 +142,18 @@ class Detic3D(Processor):
         return Points3D(
             main['image'], depthlt['image'], depthltCal['lut'],
             depthlt['rig2world'], depthltCal['rig2cam'], main['cam2world'],
-            [main['focalX'], main['focalY']], [main['principalX'], main['principalY']])
+            [main['focalX'], main['focalY']], [main['principalX'], main['principalY']],
+            generate_point_cloud=True)
 
     def dump(self, keys, xs):
-        return orjson.dumps([
+        return jsondump([
             dict(zip(keys, xs)) for xs in zip(*xs)
-        ], option=orjson.OPT_NAIVE_UTC | orjson.OPT_SERIALIZE_NUMPY)
+        ])
+
+
+def jsondump(data):
+    return orjson.dumps(data, option=orjson.OPT_NAIVE_UTC | orjson.OPT_SERIALIZE_NUMPY)
+
 
 if __name__ == '__main__':
     import fire
