@@ -33,6 +33,8 @@ class ReasoningApp:
             step_data = self.state_manager.start_recipe(recipe)
             logger.info('First step: %s' % str(step_data))
 
+            return step_data
+
     async def run_reasoning(self, prefix='', top=5):
         perception_action_sid = f'{prefix}clip:action:steps'
         perception_objects_sid = f'{prefix}detic:image'
@@ -42,15 +44,19 @@ class ReasoningApp:
                    self.api.data_push_connect([output_sid], batch=True) as ws_push:
 
             recipe_id = self.api.sessions.current_recipe()
-            self.start_recipe(recipe_id)
+            first_step = self.start_recipe(recipe_id)
+            if first_step is not None:
+                await ws_push.send_data([orjson.dumps(first_step)])
 
             while True:
                 for sid, timestamp, data in await ws_pull.recv_data():
-                    if sid == RECIPE_SID:
+                    if sid == RECIPE_SID:  # A call to start a new recipe
                         recipe_id = data.decode('utf-8')
-                        self.start_recipe(recipe_id)
+                        first_step = self.start_recipe(recipe_id)
+                        if first_step is not None:
+                            await ws_push.send_data([orjson.dumps(first_step)])
                         continue
-                    if sid == SESSION_SID:
+                    if sid == SESSION_SID:  # A call to start a new session
                         self.state_manager.reset()
                         logger.info('Recipe resetted')
                         continue
