@@ -1,11 +1,19 @@
+"""
+Author Jianzhe Lin
+May.2, 2020
+"""
+import cv2
+import matplotlib.pyplot as plt
 import os
+import re_id
 import orjson
 import logging
 import numpy as np
 import ptgctl
 import ptgctl.holoframe
 import ptgctl.util
-import re_id
+from collections import defaultdict
+
 
 logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(name)s:%(message)s')
 logger = logging.getLogger(__name__)
@@ -31,7 +39,7 @@ class MemoryApp:
                     objects = orjson.loads(data)
 
                     for obj in objects:
-                        label, seen_before = self.re_id.update_memory(np.asarray(obj['xyz_center']), obj['labels'])
+                        label, seen_before = self.re_id.update_memory(np.asarray(obj['xyz_center']), obj['label'])
                         obj['track_id'] = label
                         obj['seen_before'] = seen_before
 

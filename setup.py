@@ -10,6 +10,8 @@ deps = {
         'clip @ git+https://github.com/openai/CLIP.git@main#egg=clip',
     ],
     'yolo': IMAGE_DEPS+['torch'],
+    'omnivore': ['hydra-core', 'einops', 'iopath', 'timm'],
+    'egovlp': ['transformers'],
 }
 
 setuptools.setup(
@@ -24,7 +26,7 @@ setuptools.setup(
     packages=['ptgprocess'],
     # entry_points={'console_scripts': ['ptgprocess=ptgprocess:main']},
     install_requires=[
-        'numpy', 'orjson', 
+        'numpy', 'orjson', 'tqdm',
         #'ptgctl @ git+ssh://git@github.com/VIDA-NYU/ptgctl@main#egg=ptgctl', 
     ],
     extras_require={

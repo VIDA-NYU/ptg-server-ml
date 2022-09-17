@@ -16,11 +16,11 @@ class BaseWriter(Context):
 
 class RawWriter(BaseWriter):
     raw=True
-    def __init__(self, name, store_dir, **kw):
+    def __init__(self, name, store_dir='', **kw):
         super().__init__(**kw)
         self.fname = os.path.join(store_dir, f'{name}.zip')
 
-    def context(self, sample, t_start):
+    def context(self, sample=None, t_start=None):
         import zipfile
         print("Opening zip file:", self.fname)
         try:
@@ -110,7 +110,7 @@ class VideoWriter(BaseWriter):
 
 
 class AudioWriter(BaseWriter):
-    def __init__(self, name, store_dir, **kw):
+    def __init__(self, name, store_dir='', **kw):
         self.fname = os.path.join(store_dir, f'{name}.wav')
         super().__init__(**kw)
 
@@ -135,7 +135,7 @@ class AudioWriter(BaseWriter):
 
 class JsonWriter(BaseWriter):
     raw=True
-    def __init__(self, name, store_dir, **kw):
+    def __init__(self, name, store_dir='', **kw):
         super().__init__(**kw)
         self.fname = os.path.join(store_dir, f'{name}.json')
         
@@ -166,7 +166,7 @@ class JsonWriter(BaseWriter):
 
 
 class CsvWriter(BaseWriter):
-    def __init__(self, name, store_dir, **kw):
+    def __init__(self, name, store_dir='', **kw):
         super().__init__(**kw)
         self.fname = os.path.join(store_dir, f'{name}.csv')
 

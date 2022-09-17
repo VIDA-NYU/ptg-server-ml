@@ -6,18 +6,16 @@ import orjson
 import cv2
 import numpy as np
 import torch
-import torch.nn.functional as F
 
 from .core import Processor
 from ..util import StreamReader, StreamWriter, ImageOutput, nowstring, draw_text_list
-from ..clip import ZeroClip, ActionClip1, ActionClip2
+from ..egovlp import EgoVLP
 
-class AsyncExit(Exception): pass
 
-class ZeroClipProcessor(Processor):
+class EgoVLPApp(Processor):
     HANDS_SID = 'detic:hands'
     RECIPE_SID = 'event:recipe:id'
-    output_prefix = 'clip:zero'
+    output_prefix = 'egovlp:action'
     prompts = {
         # 'tools': 'a photo of a {}',
         # 'ingredients': 'a photo of a {}',
@@ -27,8 +25,6 @@ class ZeroClipProcessor(Processor):
     STORE_DIR = 'post'
 
     HANDS_THRESHOLD = 0.01
-
-    Model = ZeroClip
 
     async def call_async(self, recipe_id=None, *a, **kw):
         if recipe_id:
@@ -57,10 +53,10 @@ class ZeroClipProcessor(Processor):
         self.texts = {k: recipe[k] for k, _ in self.prompts.items()}
         self.z_texts = {k: self.model.encode_text(recipe[k], prompt) for k, prompt in self.prompts.items()}
 
-    async def _call_async(self, recipe_id, replay=None, fullspeed=None, out_file=None, fps=5, decay=0.9, show=False, test=False, store_dir=None, **kw):
+    async def _call_async(self, recipe_id, replay=None, fullspeed=None, decay=0.6, out_file=None, fps=5, show=False, test=False, store_dir=None, **kw):
         from ptgctl import holoframe
         if not hasattr(self, 'model'):
-            self.model = self.Model(**kw)
+            self.model = EgoVLP(**kw)
         
         # get the vocab
         assert recipe_id, "You must provide a recipe ID, otherwise we have nothing to compare"
@@ -100,13 +96,12 @@ class ZeroClipProcessor(Processor):
                 # encode the image and compare to text queries
                 d = holoframe.load(d)
                 im = d['image']
-                z_image = self.model.encode_image(im)
-                sim_decay = sims = {
-                    k: F.softmax(10 * (
-                        (1 - decay) * self.model.compare_image_text(z_image, self.z_texts[k])[0] 
-                        + decay * sim_decay[k]), dim=-1)
-                    for k in out_keys
-                }
+                self.model.add_image(im)
+                z_image = self.model.predict_recent()
+                sims = {
+                    k: (1 - decay) * self.model.similarity(self.z_texts[k], z_image)[0].detach() 
+                       + decay * sim_decay[k]
+                    for k in out_keys}
 
                 if self.hands.get('mean_conf_smooth', 1) < self.HANDS_THRESHOLD:
                     for v in sims.values():
@@ -118,6 +113,7 @@ class ZeroClipProcessor(Processor):
                     imout.output(draw_text_list(cv2.cvtColor(im, cv2.COLOR_RGB2BGR), [
                         f'{self.texts[k][i]} ({sims[k][i]:.0%})' for k in out_keys 
                         for i in torch.topk(sims[k], 3, dim=-1)[1].tolist()
+                        if sims[k][i] > 0
                     ])[0], t)
 
 
@@ -127,20 +123,6 @@ class ZeroClipProcessor(Processor):
             option=orjson.OPT_NAIVE_UTC | orjson.OPT_SERIALIZE_NUMPY)
 
 
-class ActionClip1Processor(ZeroClipProcessor):
-    output_prefix = 'clip:action-mean'
-    Model = ActionClip1
-
-
-class ActionClip2Processor(ZeroClipProcessor):
-    output_prefix = 'clip:action'
-    Model = ActionClip2
-
-
 if __name__ == '__main__':
     import fire
-    fire.Fire({
-        'zero': ZeroClipProcessor,
-        'action1': ActionClip1Processor,
-        'action2': ActionClip2Processor,
-    })
+    fire.Fire(EgoVLPApp)
