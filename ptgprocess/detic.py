@@ -38,11 +38,12 @@ BUILDIN_METADATA_PATH = {
     'coco': 'coco_2017_val',
 }
 
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 DEFAULT_PROMPT = 'a {}'
 
 class Detic(nn.Module):
-    def __init__(self, vocab=None, conf_threshold=0.3, masks=False, patch_for_embeddings=True, prompt=DEFAULT_PROMPT):
+    def __init__(self, vocab=None, conf_threshold=0.3, masks=False, patch_for_embeddings=True, prompt=DEFAULT_PROMPT, device=device):
         super().__init__()
         cfg = get_cfg()
         add_centernet_config(cfg)
@@ -53,8 +54,8 @@ class Detic(nn.Module):
         cfg.MODEL.ROI_BOX_HEAD.ZEROSHOT_WEIGHT_PATH = 'rand'
         cfg.MODEL.ROI_HEADS.ONE_CLASS_PER_PROPOSAL = True # For better visualization purpose. Set to False for all classes.
         cfg.MODEL.MASK_ON = masks
-        if not torch.cuda.is_available():
-            cfg.MODEL.DEVICE='cpu' # uncomment this to use cpu-only mode.
+        #if not torch.cuda.is_available():
+        cfg.MODEL.DEVICE=device # uncomment this to use cpu-only mode
         cfg.MODEL.ROI_BOX_HEAD.CAT_FREQ_PATH = os.path.join(detic_path, cfg.MODEL.ROI_BOX_HEAD.CAT_FREQ_PATH)
         # print(cfg)
         self.predictor = DefaultPredictor(cfg)

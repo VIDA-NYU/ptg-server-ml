@@ -11,6 +11,7 @@ deps = {
     ],
     'yolo': IMAGE_DEPS+['torch'],
     'omnivore': ['hydra-core', 'einops', 'iopath', 'timm'],
+    'egovlp': ['transformers'],
 }
 
 setuptools.setup(

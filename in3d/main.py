@@ -89,10 +89,10 @@ class In3DApp:
                             h,w = pt3d.im_shape[:2]
                             
                             xyxy = np.array([o['xyxyn'] for o in d]).reshape(-1, 4)
-                            xyxy[:, 0] /= w 
-                            xyxy[:, 1] /= h 
-                            xyxy[:, 2] /= w 
-                            xyxy[:, 3] /= h 
+                            xyxy[:, 0] *= w 
+                            xyxy[:, 1] *= h 
+                            xyxy[:, 2] *= w 
+                            xyxy[:, 3] *= h 
                             xyz_top, xyz_center, dist = pts3d.transform_center_top(xyxy)
                             valid = dist < self.max_depth_dist  # make sure the points aren't too far
                             log.debug('%d/%d boxes valid. dist in [%f,%f]', valid.sum(), len(valid), dist.min(initial=np.inf), dist.max(initial=0))

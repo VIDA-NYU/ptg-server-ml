@@ -14,18 +14,29 @@ services:
     restart: unless-stopped
     command: -m ptgprocess.processors.clip action2 run --continuous
     devices:
-     - /dev/nvidia1:/dev/nvidia0
+     - /dev/nvidia0:/dev/nvidia0
 
-  omnivore:
-    image: ptgprocess
-    build: .
-    container_name: omnivore
-    volumes:
-      - ${VOLUMES}/models/torchhub:/root/.cache/torch/hub/checkpoints
-    restart: unless-stopped
-    command: -m ptgprocess.processors.omnivore run --continuous
-    devices:
-     - /dev/nvidia1:/dev/nvidia0
+  # egovlp:
+  #   image: ptgprocess
+  #   build: .
+  #   container_name: egovlp
+  #   volumes:
+  #     - ${VOLUMES}/models:/src/lib/ptgprocess/models
+  #   restart: unless-stopped
+  #   command: -m ptgprocess.processors.egovlp run --continuous
+  #   devices:
+  #    - /dev/nvidia1:/dev/nvidia0
+
+  # omnivore:
+  #   image: ptgprocess
+  #   build: .
+  #   container_name: omnivore
+  #   volumes:
+  #     - ${VOLUMES}/models/torchhub:/root/.cache/torch/hub/checkpoints
+  #   restart: unless-stopped
+  #   command: -m ptgprocess.processors.omnivore run --continuous
+  #   devices:
+  #    - /dev/nvidia0:/dev/nvidia0
 
   # reasoning:
   #   build: ./reasoning

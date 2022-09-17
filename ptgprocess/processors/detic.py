@@ -23,15 +23,20 @@ class DeticApp(Processor):
     STORE_DIR = 'post'
     vocab_keys = ['tools_simple', 'ingredients_simple']
 
+    EXTRA_VOCAB = ['person', 'feet']
+
     def __init__(self):
         super().__init__()
-        self.model = Detic()
+        self.model = Detic(device='cuda:1')
 
     async def call_async(self, replay=None, prefix=None, fullspeed=None, out_file=None, fps=10, show=False, store_dir=None, test=False, **kw):
         # stream ids
         in_sids = ['main']
-        out_sids = ['detic:image']
+        out_sids = ['detic:image', 'detic:hands']
         recipe_sid = 'event:recipe:id'
+
+        mean_person_confs_decay = 0
+        decay = 0.5
 
         # optional output video
         if out_file is True:
@@ -59,13 +64,25 @@ class DeticApp(Processor):
                 xywhn[:, 1] = (xywhn[:, 1]) / h
                 xywhn[:, 2] = (xywhn[:, 2]) / w
                 xywhn[:, 3] = (xywhn[:, 3]) / h
+
+                is_person = labels == 'person'
+                person_confs = confs[is_person] if is_person.sum() else np.zeros((1,))
+                mean_person_confs = np.nanmean(person_confs)
+
+                mean_person_confs_decay = (1 - decay) * mean_person_confs + decay * mean_person_confs_decay
                 
                 # write back to stream
                 await writer.write([
                     self.dump(
                         self.image_box_keys, 
                         [xywhn, confs, class_ids, labels]),
-                ], out_sids, [t])
+                    jsondump({
+                        'n_person_boxes': is_person.sum(),
+                        'max_conf': np.max(person_confs, initial=0),
+                        'mean_conf': mean_person_confs,
+                        'mean_conf_smooth': mean_person_confs_decay,
+                    }),
+                ], out_sids, [t, t])
 
                 # optional video display
                 if imout.active:
@@ -81,7 +98,7 @@ class DeticApp(Processor):
             return
         print('using recipe', recipe_id)
         recipe = self.api.recipes.get(recipe_id)
-        self.model.set_vocab([w for k in self.vocab_keys for w in recipe[k]])
+        self.model.set_vocab([w for k in self.vocab_keys for w in recipe[k]] + self.EXTRA_VOCAB)
 
     def predict(self, im):
         outputs = self.model(im)
