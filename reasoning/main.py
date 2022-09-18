@@ -15,6 +15,7 @@ configs = {'rule_classifier_path': '/src/app/models/recipe_tagger',
 
 RECIPE_SID = 'event:recipe:id'
 SESSION_SID = 'event:session:id'
+UPDATE_STEP_SID = 'event:recipe:step'
 
 
 class ReasoningApp:
@@ -36,11 +37,11 @@ class ReasoningApp:
             return step_data
 
     async def run_reasoning(self, prefix='', top=5):
-        perception_action_sid = f'{prefix}clip:action:steps'
+        perception_actions_sid = f'{prefix}clip:action:steps'
         perception_objects_sid = f'{prefix}detic:image'
         output_sid = f'{prefix}reasoning'
 
-        async with self.api.data_pull_connect([perception_action_sid, perception_objects_sid, RECIPE_SID, SESSION_SID], ack=True) as ws_pull, \
+        async with self.api.data_pull_connect([perception_actions_sid, perception_objects_sid, RECIPE_SID, SESSION_SID, UPDATE_STEP_SID], ack=True) as ws_pull, \
                    self.api.data_push_connect([output_sid], batch=True) as ws_push:
 
             recipe_id = self.api.sessions.current_recipe()
@@ -56,14 +57,17 @@ class ReasoningApp:
                         if first_step is not None:
                             await ws_push.send_data([orjson.dumps(first_step)])
                         continue
-                    if sid == SESSION_SID:  # A call to start a new session
+                    elif sid == SESSION_SID:  # A call to start a new session
                         self.state_manager.reset()
-                        logger.info('Recipe resetted')
                         continue
 
-                    if sid == perception_objects_sid:
+                    elif sid == perception_objects_sid:  # A call sending objects and bounding boxes
                         #objects = orjson.loads(data)
                         #print('>>>>>>>>> objects', objects)
+                        continue
+                    elif sid == UPDATE_STEP_SID:  # A call to update the step
+                        step_index = int(data)
+                        self.state_manager.set_user_feedback(step_index)
                         continue
 
                     action_predictions = orjson.loads(data)
