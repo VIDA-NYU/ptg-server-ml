@@ -60,7 +60,7 @@ class EgoVLP(nn.Module):
         #model.load_state_dict(state_dict, strict=True)
         self.model = model.to(device)
         self.model.eval()
-        self.device = self.model.device
+        self.device = device
 
         self.tokenizer = transformers.AutoTokenizer.from_pretrained("distilbert-base-uncased")
     
