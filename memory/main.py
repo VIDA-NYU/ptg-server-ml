@@ -42,7 +42,7 @@ class MemoryApp:
                     
                     objects = orjson.loads(data)
                     self.re_id.update_frame(objects)
-                    await ws_push.send_data([orjson.dumps(self.re_id.dump_memory())])
+                    await ws_push.send_data([orjson.dumps(self.re_id.dump_memory(), option = orjson.OPT_SERIALIZE_NUMPY)])
 
 
 if __name__ == '__main__':
