@@ -59,7 +59,7 @@ class ReId:
 
     def memory_comparison(self, seen, candidate):
         '''Compare a new instance to a previous one. Determine if they match.'''
-        return np.linalg.norm(candidate - seen) < 100
+        return np.linalg.norm(candidate - seen) < 0.2
     
     def dump_memory(self):
         return list(self.memory.values())

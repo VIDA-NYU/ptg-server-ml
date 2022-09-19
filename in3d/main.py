@@ -93,17 +93,14 @@ class In3DApp:
                             xyxy[:, 1] *= h 
                             xyxy[:, 2] *= w 
                             xyxy[:, 3] *= h 
-                            xyz_top, xyz_center, dist = pts3d.transform_center_top(xyxy)
+                            xyz_center, dist = pts3d.transform_center(xyxy)
                             valid = dist < self.max_depth_dist  # make sure the points aren't too far
                             log.debug('%d/%d boxes valid. dist in [%f,%f]', valid.sum(), len(valid), dist.min(initial=np.inf), dist.max(initial=0))
 
-                            for obj, xyz_top, xyz_center, valid, dist in zip(d, xyz_top, xyz_center, valid, dist):
-                                obj['xyz_top'] = xyz_top
+                            for obj, xyz_center, valid, dist in zip(d, xyz_center, valid, dist):
                                 obj['xyz_center'] = xyz_center
-                                #obj['valid'] = valid
                                 obj['depth_map_dist'] = dist
                             
-                            #d = [o for o in d if o['valid']]
                             await ws_push.send_data([jsondump(d)], ['detic:world'], [t])
                             continue
 
