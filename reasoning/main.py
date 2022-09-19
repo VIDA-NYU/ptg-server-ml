@@ -36,8 +36,8 @@ class ReasoningApp:
 
             return step_data
 
-    async def run_reasoning(self, prefix='', top=5):
-        perception_actions_sid = f'{prefix}clip:action:steps'
+    async def run_reasoning(self, prefix='', top=5, use_clip=True):
+        perception_actions_sid = f'{prefix}clip:action:steps' if use_clip else f'{prefix}egovlp:action:steps'
         perception_objects_sid = f'{prefix}detic:image'
         output_sid = f'{prefix}reasoning'
 
@@ -67,7 +67,8 @@ class ReasoningApp:
                         continue
                     elif sid == UPDATE_STEP_SID:  # A call to update the step
                         step_index = int(data)
-                        self.state_manager.set_user_feedback(step_index)
+                        updated_step = self.state_manager.set_user_feedback(step_index)
+                        await ws_push.send_data([orjson.dumps(updated_step)])
                         continue
 
                     action_predictions = orjson.loads(data)
