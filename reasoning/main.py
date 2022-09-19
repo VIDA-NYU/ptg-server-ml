@@ -67,7 +67,8 @@ class ReasoningApp:
                         continue
                     elif sid == UPDATE_STEP_SID:  # A call to update the step
                         step_index = int(data)
-                        self.state_manager.set_user_feedback(step_index)
+                        updated_step = self.state_manager.set_user_feedback(step_index)
+                        await ws_push.send_data([orjson.dumps(updated_step)])
                         continue
 
                     action_predictions = orjson.loads(data)
