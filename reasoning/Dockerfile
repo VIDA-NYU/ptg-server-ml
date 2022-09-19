@@ -16,7 +16,7 @@ RUN pip install gdown
 ENV MODEL_DIR=/src/app/models
 RUN mkdir -p /src/app/models
 
-RUN gdown https://drive.google.com/uc?id=1aYSlngadawRTKuIkd1FtMvrMBfenqPLH -O MODEL_DIR/recipe_tagger.zip \
+RUN gdown https://drive.google.com/uc?id=1aYSlngadawRTKuIkd1FtMvrMBfenqPLH -O $MODEL_DIR/recipe_tagger.zip \
 && unzip $MODEL_DIR/recipe_tagger.zip -d $MODEL_DIR \
 && rm $MODEL_DIR/recipe_tagger.zip
 
