@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 #ptgctl.log.setLevel('WARNING')
 
-RECIPE_SID = 'event:recipe:id'
+DEPTHCAL_SID = 'depthltCal'
 
 class MemoryApp:
     def __init__(self):
@@ -31,12 +31,12 @@ class MemoryApp:
         input_sid = f'{prefix}detic:world'
         output_sid = f'{prefix}detic:memory'
 
-        async with self.api.data_pull_connect([input_sid, RECIPE_SID]) as ws_pull, \
+        async with self.api.data_pull_connect([input_sid, DEPTHCAL_SID]) as ws_pull, \
                    self.api.data_push_connect(output_sid, batch=True) as ws_push:
             while True:
                 for sid, timestamp, data in await ws_pull.recv_data():
-                    # clear the memory when a new recipe is started
-                    if sid == RECIPE_SID:
+                    # clear the memory when a new streaming is started
+                    if sid == DEPTHCAL_SID:
                         self.re_id = re_id.ReId()
                         continue
                     
