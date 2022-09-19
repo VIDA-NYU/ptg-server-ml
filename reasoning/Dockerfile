@@ -20,7 +20,7 @@ RUN gdown https://drive.google.com/uc?id=1aYSlngadawRTKuIkd1FtMvrMBfenqPLH -O $M
 && unzip $MODEL_DIR/recipe_tagger.zip -d $MODEL_DIR \
 && rm $MODEL_DIR/recipe_tagger.zip
 
-RUN gdown https://drive.google.com/uc?id=1RsXbLrIubPTAbgP3NEAB73LMcAKDV3oE -O /src/app/bert_classifier.zip \
+RUN gdown https://drive.google.com/uc?id=1RsXbLrIubPTAbgP3NEAB73LMcAKDV3oE -O $MODEL_DIR/bert_classifier.zip \
 && unzip $MODEL_DIR/bert_classifier.zip -d $MODEL_DIR \
 && rm $MODEL_DIR/bert_classifier.zip
 
