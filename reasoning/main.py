@@ -36,8 +36,8 @@ class ReasoningApp:
 
             return step_data
 
-    async def run_reasoning(self, prefix='', top=5):
-        perception_actions_sid = f'{prefix}clip:action:steps'
+    async def run_reasoning(self, prefix='', top=5, use_clip=True):
+        perception_actions_sid = f'{prefix}clip:action:steps' if use_clip else f'{prefix}egovlp:action:steps'
         perception_objects_sid = f'{prefix}detic:image'
         output_sid = f'{prefix}reasoning'
 
