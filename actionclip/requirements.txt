@@ -3,9 +3,4 @@ opencv-python
 orjson
 tqdm
 
-av
-decord
-ffmpeg
-humanize
-psutil
-transformers
+git+https://github.com/openai/CLIP.git@main#egg=clip

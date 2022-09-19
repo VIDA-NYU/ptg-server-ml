@@ -81,7 +81,7 @@ class ActionClipApp:
             with logging_redirect_tqdm():
                 while True:
                     pbar.set_description('waiting for data...')
-                    for sid, t, buffer in await ws_pull.recv_data():
+                    for sid, t, d in await ws_pull.recv_data():
                         pbar.set_description(f'{sid} {t}')
                         pbar.update()
                         tms = int(t.split('-')[0])
@@ -103,7 +103,7 @@ class ActionClipApp:
                             continue
                         
                         # encode the image
-                        d = holoframe.load(buffer)
+                        d = holoframe.load(d)
                         im = d['image']
                         z_image = self.model.encode_image(im)
                     
@@ -137,7 +137,8 @@ class ActionClipApp:
         self.z_texts = {k: self.model.encode_text(recipe[k], prompt) for k, prompt in self.prompts.items()}
 
     def compare(self, z_image, key):
-        sim = self.model.similarity(self.z_texts[key], z_image)[0].detach()
+        #sim = self.model.similarity(self.z_texts[key], z_image)[0].detach()
+        sim = self.model.compare_image_text(z_image, self.z_texts[key])[0].detach()
         self.sim_decay[key] = sim = (1 - self.decay) * sim + self.decay * self.sim_decay[key]
         return sim
 
@@ -153,4 +154,4 @@ def jsondump(data):
 
 if __name__ == '__main__':
     import fire
-    fire.Fire(EgoVLPApp)
+    fire.Fire(ActionClipApp)
