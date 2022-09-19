@@ -73,7 +73,8 @@ class EgoVLP(nn.Module):
         ])
 
     def forward(self, video, text):
-        text_embed, vid_embed = self.model({}, return_embeds=True)
+        with torch.no_grad():
+            text_embed, vid_embed = self.model({}, return_embeds=True)
 
     def encode_text(self, text, prompt=None):
         '''Encode text prompts. Returns formatted prompts and encoded CLIP text embeddings.'''
@@ -95,7 +96,8 @@ class EgoVLP(nn.Module):
 
     def predict_recent(self):
         X = torch.stack(list(self.q), dim=1).to(self.device)
-        z_video = self.model.compute_video(X)
+        with torch.no_grad():
+            z_video = self.model.compute_video(X)
         return z_video
 
     def similarity(self, z_text, z_video, dual=False):

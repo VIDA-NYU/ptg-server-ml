@@ -3,6 +3,49 @@ version: '3'
 services:
 
   # 
+  
+  detic:
+    image: detic
+    build:
+      context: .
+      dockerfile: detic/Dockerfile
+    container_name: detic
+    volumes:
+      - ${VOLUMES}/models/cache:/root/.torch/iopath_cache/detic
+      - ${VOLUMES}/models/cache:/root/.cache
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    devices:
+     - /dev/nvidia1:/dev/nvidia0
+
+  egovlp:
+    image: egovlp
+    build:
+      context: .
+      dockerfile: egovlp/Dockerfile
+    container_name: egovlp
+    #command: -c 'import time;time.sleep(600)'
+    volumes:
+      - ${VOLUMES}/models/cache:/root/.cache
+      - ${VOLUMES}/models:/src/lib/ptgprocess/models
+    environment:
+      LOCAL_RANK: '0'
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    devices:
+     - /dev/nvidia0:/dev/nvidia0
 
   actionclip:
     image: ptgprocess
@@ -10,7 +53,7 @@ services:
     container_name: actionclip
     volumes:
       - ${VOLUMES}/models:/src/lib/ptgprocess/models
-      - ${VOLUMES}/models/pretrained-clip/:/root/.cache/clip
+      - ${VOLUMES}/models/.cache/:/root/.cache/
     restart: unless-stopped
     command: -m ptgprocess.processors.clip action2 run --continuous
     devices:
