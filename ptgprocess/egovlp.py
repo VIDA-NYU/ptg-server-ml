@@ -123,63 +123,15 @@ def sim_matrix_mm(a, b):
     return torch.mm(a, b.transpose(0, 1))
 
 
-# def sim_matrix(a, b, eps=1e-8):
-#     """added eps for numerical stability"""
-#     a_n = F.normalize(a, dim=1, eps=eps)
-#     b_n = F.normalize(b, dim=1, eps=eps)
-#     sim_mt = torch.mm(a, b.transpose(0, 1))
-#     return sim_mt
-# 
-# def sim_matrix_mm(a, b):
-#     sim_mt = torch.mm(a, b.transpose(0, 1))
-#     return sim_mt
-
-
-
-
-
-
-
-
-
-def get_vocab(vocab, ann_root):
-    if vocab is None:
-        return vocab  # someone elses problem lol
-    if isinstance(vocab, (list, tuple)):
-        return vocab  # literal
-    if ':' in vocab:
-        kind, vocab, key = vocab.split(':', 2)
-        kind = kind.lower()
-        if kind == 'recipe':
-            import ptgctl
-            api = ptgctl.API()
-            recipe = api.recipes.get(vocab)
-            return [w for k in key.split(',') for w in recipe[k]]
-        if kind.startswith('ek'):
-            import pandas as pd
-            df = pd.concat([
-                pd.read_csv(os.path.join(ann_root, "EPIC_100_train_normalized.csv")).assign(split='train'),
-                pd.read_csv(os.path.join(ann_root, "EPIC_100_validation_normalized.csv")).assign(split='val'),
-            ])
-            df = df[df.video_id == vocab] if vocab != 'all' else df
-            if key not in df.columns:
-                raise ValueError(f'{key} not in {df.columns}')
-            return df[key].unique().tolist()
-    raise ValueError("Invalid vocab")
-
-
-
-
-def run(src, vocab, vocab_key='steps_simple', out_file=None, n_frames=20, fps=10, stride=1, show=None, ann_root=None, **kw):
+def run(src, vocab, include=None, exclude=None, out_file=None, n_frames=20, fps=10, stride=1, show=None, ann_root=None, **kw):
     from ptgprocess.record import CsvWriter
-    from ptgprocess.util import VideoInput, VideoOutput, draw_text_list
+    from ptgprocess.util import VideoInput, VideoOutput, draw_text_list, get_vocab
     model = EgoVLP(n_frames=n_frames, **kw)
-
 
     if out_file is True:
         out_file='egovlp_'+os.path.basename(src)
 
-    vocab = get_vocab(vocab, ann_root)
+    vocab = get_vocab(vocab, ann_root, include, exclude)
 
     z_text = model.encode_text(vocab)
     print(z_text.shape)
@@ -187,7 +139,7 @@ def run(src, vocab, vocab_key='steps_simple', out_file=None, n_frames=20, fps=10
     with VideoInput(src, fps) as vin, \
          VideoOutput(out_file, fps, show=show) as imout, \
          CsvWriter('egovlp_'+os.path.basename(src), header=['_time']+list(vocab)) as csvout:
-        topk = []
+        topk = topk_text = []
         for i, (t, im) in enumerate(vin):
             im = cv2.resize(im, (600, 400))
             model.add_image(im)

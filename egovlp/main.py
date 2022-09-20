@@ -23,13 +23,13 @@ log.setLevel('DEBUG')
 
 
 class EgoVLPApp:
-    prompts = {
-        # 'tools': 'a photo of a {}',
-        # 'ingredients': 'a photo of a {}',
-        'steps_simple': '{}',
-    }
-    key_map = {'steps_simple': 'steps'}
     hands_threshold = 0.01
+    action_sets = {
+        'steps': {
+            'prompt': '{}',
+            'keys': ['steps_simple']
+        }
+    }
 
     def __init__(self, **kw):
         self.api = ptgctl.API(username=os.getenv('API_USER') or 'egovlp',
@@ -66,22 +66,23 @@ class EgoVLPApp:
         # stream ids
         in_sids = ['main']
         recipe_sid = 'event:recipe:id'
+        vocab_sid = 'event:vocab:update'
         hands_sid = 'detic:hands'
 
-        out_keys = set(self.prompts)
-        out_sids = [f'egovlp:action:{self.key_map.get(k, k)}' for k in out_keys]
+        out_keys = set(self.action_sets)
+        out_sids = [f'egovlp:action:{k}' for k in out_keys]
 
         self.decay = 0.5
         self.sim_decay = {k: 0 for k in out_keys}
         self.hands = {}
 
         pbar = tqdm.tqdm()
-        async with self.api.data_pull_connect(in_sids + [hands_sid, recipe_sid], ack=True) as ws_pull, \
+        async with self.api.data_pull_connect(in_sids + [hands_sid, recipe_sid, vocab_sid], ack=True) as ws_pull, \
                    self.api.data_push_connect(out_sids, batch=True) as ws_push:
             with logging_redirect_tqdm():
                 while True:
                     pbar.set_description('waiting for data...')
-                    for sid, t, buffer in await ws_pull.recv_data():
+                    for sid, t, d in await ws_pull.recv_data():
                         pbar.set_description(f'{sid} {t}')
                         pbar.update()
                         tms = int(t.split('-')[0])
@@ -103,7 +104,7 @@ class EgoVLPApp:
                             continue
                         
                         # encode the image
-                        d = holoframe.load(buffer)
+                        d = holoframe.load(d)
                         im = d['image']
                         self.model.add_image(im)
                         z_image = self.model.predict_recent()
@@ -134,8 +135,8 @@ class EgoVLPApp:
             return
         print('using recipe', recipe_id)
         recipe = self.api.recipes.get(recipe_id)
-        self.texts = {k: recipe[k] for k, _ in self.prompts.items()}
-        self.z_texts = {k: self.model.encode_text(recipe[k], prompt) for k, prompt in self.prompts.items()}
+        self.texts = {k: [t for k in d['keys'] for t in recipe.get(k) or []] for k, d in self.action_sets.items()}
+        self.z_texts = {k: self.model.encode_text(self.texts[k], d['prompt']) for k, d in self.action_sets.items()}
 
     def compare(self, z_image, key):
         sim = self.model.similarity(self.z_texts[key], z_image)[0].detach()

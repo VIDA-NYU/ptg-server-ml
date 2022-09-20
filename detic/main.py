@@ -25,7 +25,7 @@ DEFAULT_VOCAB = 'lvis'
 
 class DeticApp:
     image_box_keys = ['xyxyn', 'confidence', 'class_id', 'label']
-    vocab_keys = ['tools_simple', 'ingredients_simple']
+    vocab_keys = ['tools_simple', 'ingredients_simple', 'objects']
 
     EXTRA_VOCAB = ['person', 'feet']
 
@@ -103,7 +103,7 @@ class DeticApp:
             return
         print('using recipe', recipe_id)
         recipe = self.api.recipes.get(recipe_id)
-        self.model.set_vocab([w for k in self.vocab_keys for w in recipe[k]] + self.EXTRA_VOCAB)
+        self.model.set_vocab([w for k in self.vocab_keys for w in recipe.get(k) or []] + self.EXTRA_VOCAB)
 
     def predict(self, im):
         outputs = self.model(im)

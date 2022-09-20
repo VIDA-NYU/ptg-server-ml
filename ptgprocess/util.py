@@ -351,6 +351,42 @@ def get_video_info(src):
     return fps, total
 
 
+def get_vocab(vocab, ann_root, include=None, exclude=None, splitby=None, builtin=None):
+    def _get(vocab):
+        if vocab is None:
+            return vocab  # someone elses problem lol
+        if isinstance(vocab, (list, tuple, set)):
+            return vocab  # literal
+        if builtin and vocab in builtin:
+            return vocab  # builtin
+        if ':' in vocab:
+            kind, vocab, key = vocab.split(':', 2)
+            kind = kind.lower()
+            if kind == 'recipe':
+                import ptgctl
+                api = ptgctl.API()
+                recipe = api.recipes.get(vocab)
+                return [w for k in key.split(',') for w in recipe[k]]
+            if kind.startswith('ek'):
+                import pandas as pd
+                df = pd.concat([
+                    pd.read_csv(os.path.join(ann_root, "EPIC_100_train_normalized.csv")).assign(split='train'),
+                    pd.read_csv(os.path.join(ann_root, "EPIC_100_validation_normalized.csv")).assign(split='val'),
+                ])
+                df = df[df.video_id == vocab] if vocab != 'all' else df
+                return df[key].unique().tolist()
+        raise ValueError("Invalid vocab")
+
+    vocab =  _get(vocab)
+    if splitby:
+        vocab = [x.strip() for x in vocab for x in x.split(splitby)]
+    if exclude:
+        vocab = [x for x in vocab if x not in exclude]
+    if include:
+        vocab = list(vocab)+list(include)
+
+    return list(set(vocab))
+
 
 def maybe_profile(func, min_time=20):
     @functools.wraps(func)
