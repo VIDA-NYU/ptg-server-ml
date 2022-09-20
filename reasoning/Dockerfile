@@ -31,3 +31,4 @@ RUN python -c "import nltk;nltk.download('punkt', download_dir='/src/app/models/
 
 ADD main.py .
 CMD ["main.py", "run" ]
+

@@ -17,6 +17,9 @@ RECIPE_SID = 'event:recipe:id'
 SESSION_SID = 'event:session:id'
 UPDATE_STEP_SID = 'event:recipe:step'
 
+import nltk
+nltk.download('punkt')
+
 
 class ReasoningApp:
 
@@ -68,7 +71,8 @@ class ReasoningApp:
                     elif sid == UPDATE_STEP_SID:  # A call to update the step
                         step_index = int(data)
                         updated_step = self.state_manager.set_user_feedback(step_index)
-                        await ws_push.send_data([orjson.dumps(updated_step)])
+                        if updated_step is not None:
+                            await ws_push.send_data([orjson.dumps(updated_step)])
                         continue
 
                     action_predictions = orjson.loads(data)
@@ -93,3 +97,4 @@ class ReasoningApp:
 if __name__ == '__main__':
     import fire
     fire.Fire(ReasoningApp)
+
