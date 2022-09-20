@@ -28,6 +28,8 @@ class ReId:
         
         # update objects
         for obj in objects:
+            if obj['confidence'] < 0.5:
+                continue
             track_id = self.update_object(obj)
             # remove it from unseens if we see the track_id
             unseens.discard(track_id)
