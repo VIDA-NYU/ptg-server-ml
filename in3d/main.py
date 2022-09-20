@@ -93,7 +93,7 @@ class In3DApp:
                             xyxy[:, 1] *= h 
                             xyxy[:, 2] *= w 
                             xyxy[:, 3] *= h 
-                            xyz_center, dist = pt3d.transform_center(xyxy)
+                            xyz_center, dist = pt3d.transform_center_withinbbox(xyxy)
                             valid = dist < self.max_depth_dist  # make sure the points aren't too far
                             log.debug('%d/%d boxes valid. dist in [%f,%f]', valid.sum(), len(valid), dist.min(initial=np.inf), dist.max(initial=0))
 

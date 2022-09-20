@@ -7,6 +7,7 @@ from collections import Counter
 import numpy as np
 import cv2
 import matplotlib.pyplot as plt
+from ptgctl import pt3d
     
 @dataclass
 class MemoryItem:
@@ -28,7 +29,7 @@ class ReId:
         
         # update objects
         for obj in objects:
-            if obj['confidence'] < 0.5:
+            if obj['confidence'] < 0.5 or obj['depth_map_dist'] == pt3d.INVALID_DEPTH:
                 continue
             track_id = self.update_object(obj)
             # remove it from unseens if we see the track_id
