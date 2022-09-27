@@ -1,6 +1,7 @@
 from __future__ import annotations
 # import heartrate; heartrate.trace(browser=True)
 import functools
+import itertools
 from typing import AsyncIterator, cast
 import os
 import time
@@ -419,12 +420,15 @@ async def call_multiple_async(primary_task, *tasks):
 
 
 
-def draw_boxes(im, boxes, labels):
-    for xy, label in zip(boxes, labels if labels is not None else ['']*len(boxes)):
+def draw_boxes(im, boxes, labels, color=(0,255,0), size=1):
+    color = np.asarray(color).astype(int)
+    color = color[None] if color.ndim == 1 else color
+    labels = labels if labels is not None else ['']*len(boxes)
+    for xy, label, c in zip(boxes, itertools.cycle(labels), itertools.cycle(color)):
         xy = list(map(int, xy))
-        im = cv2.rectangle(im, xy[:2], xy[2:4], (0,255,0), 2)
+        im = cv2.rectangle(im, xy[:2], xy[2:4], tuple(c.tolist()), 2)
         if label:
-            im = cv2.putText(im, label, xy[:2], cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+            im = cv2.putText(im, label, xy[:2], cv2.FONT_HERSHEY_SIMPLEX, im.shape[1]/1200*size, (0, 0, 255), 2)
     return im
 
 
@@ -436,3 +440,11 @@ def draw_text_list(img, texts, i=-1, tl=(10, 50), scale=0.4, space=50, color=(25
             cv2.FONT_HERSHEY_COMPLEX, 
             scale, color, thickness)
     return img, i
+
+def draw_gt_text_list(im, pred_labels, texts, i_trues, i_topkmax):
+    _, i = draw_text_list(im, [texts[i] for i in i_trues if i in i_topkmax[:1]], color=(0,255,0))
+    _, i = draw_text_list(im, [texts[i] for i in i_trues if i in i_topkmax[1:]], i, color=(255,255,0))
+    _, i = draw_text_list(im, [texts[i] for i in i_trues if i not in i_topkmax], i, color=(0,0,255))
+    _, i = draw_text_list(im, pred_labels, i)
+    return im
+
