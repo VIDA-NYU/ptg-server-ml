@@ -26,7 +26,7 @@ CHECKPOINT = os.path.join(MODEL_DIR, 'upernet_swin_base_patch4_window12_512x512_
 
 
 class BaseEgoHos(nn.Module):
-    def __init__(self, config='twohands_cb_to_obj2_ccda', checkpoint=None, device=device):
+    def __init__(self, config, checkpoint=None, device=device):
         super().__init__()
         if not os.path.isfile(config):
             self.name = config
