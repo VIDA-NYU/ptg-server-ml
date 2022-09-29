@@ -10,15 +10,17 @@ logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(name)s:%(message
 logger = logging.getLogger(__name__)
 #ptgctl.log.setLevel('WARNING')
 
-configs = {'rule_classifier_path': '/src/app/models/recipe_tagger',
-           'bert_classifier_path': '/src/app/models/bert_classifier'}
-
 RECIPE_SID = 'event:recipe:id'
 SESSION_SID = 'event:session:id'
 UPDATE_STEP_SID = 'event:recipe:step'
+ACTIONS_CLIP_SID = 'clip:action:steps'
+ACTIONS_EGOVLP_SID = 'egovlp:action:steps'
+OBJECTS_SID = 'detic:image'
+REASONING_SID = 'reasoning'
 
-import nltk
-nltk.download('punkt')
+
+CONFIGS = {'tagger_model_path': '/src/app/models/recipe_tagger',
+           'bert_classifier_path': '/src/app/models/bert_classifier'}
 
 
 class ReasoningApp:
@@ -27,7 +29,7 @@ class ReasoningApp:
         self.api = ptgctl.API(username=os.getenv('API_USER') or 'reasoning',
                               password=os.getenv('API_PASS') or 'reasoning')
 
-        self.state_manager = StateManager(configs)
+        self.state_manager = StateManager(CONFIGS)
 
     def start_recipe(self, recipe_id):
         logger.info('Starting recipe, ID=%s...' % str(recipe_id))
@@ -39,12 +41,12 @@ class ReasoningApp:
 
             return step_data
 
-    async def run_reasoning(self, prefix='', top=5, use_clip=True):
-        perception_actions_sid = f'{prefix}clip:action:steps' if use_clip else f'{prefix}egovlp:action:steps'
-        perception_objects_sid = f'{prefix}detic:image'
-        output_sid = f'{prefix}reasoning'
+    async def run_reasoning(self, prefix='', top=5, use_egovlp=True):
+        actions_sid = prefix + ACTIONS_EGOVLP_SID if use_egovlp else prefix + ACTIONS_CLIP_SID
+        objects_sid = prefix + OBJECTS_SID
+        output_sid = prefix + REASONING_SID
 
-        async with self.api.data_pull_connect([perception_actions_sid, perception_objects_sid, RECIPE_SID, SESSION_SID, UPDATE_STEP_SID], ack=True) as ws_pull, \
+        async with self.api.data_pull_connect([actions_sid, objects_sid, RECIPE_SID, SESSION_SID, UPDATE_STEP_SID], ack=True) as ws_pull, \
                    self.api.data_push_connect([output_sid], batch=True) as ws_push:
 
             recipe_id = self.api.sessions.current_recipe()
@@ -64,7 +66,7 @@ class ReasoningApp:
                         self.state_manager.reset()
                         continue
 
-                    elif sid == perception_objects_sid:  # A call sending objects and bounding boxes
+                    elif sid == objects_sid:  # A call sending objects and bounding boxes
                         #objects = orjson.loads(data)
                         #print('>>>>>>>>> objects', objects)
                         continue
@@ -97,4 +99,3 @@ class ReasoningApp:
 if __name__ == '__main__':
     import fire
     fire.Fire(ReasoningApp)
-
