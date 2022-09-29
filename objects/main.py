@@ -7,15 +7,17 @@ import logging
 import tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
 
+import cv2
 import numpy as np
 
-# import deep_sort
+import deep_sort as ds
 
 import ptgctl
 import ptgctl.util
 from ptgctl import holoframe
 from ptgctl import pt3d
 from ptgprocess.detic import Detic
+from ptgprocess.util import VideoOutput, draw_boxes
 
 logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(name)s:%(message)s')
 log = logging.getLogger(__name__)
@@ -96,6 +98,7 @@ class ObjectsApp:
         self.max_depth_dist = max_depth_dist
         self.vocab_keys = ['objects']
         self.EXTRA_VOCAB = ['person', 'feet']
+        self.obj_size = 0.18 # 20cm - length of a fork
 
     @ptgctl.util.async2sync
     async def run(self, *a, **kw):
@@ -121,9 +124,20 @@ class ObjectsApp:
         # get the current recipe at the start
         self.change_recipe(self.api.sessions.current_recipe())
 
+        tracker = ds.Tracker(ds.NearestNeighbor('cosine', 0.2), ndim=3)
+        out_file = 'track.mp4'
+
         pbar = tqdm.tqdm()
         async with self.api.data_pull_connect(in_sids + [recipe_sid], ack=True) as ws_pull, \
-                   self.api.data_push_connect('*', batch=True) as ws_push:
+                   self.api.data_push_connect('*', batch=True) as ws_push, \
+                   VideoOutput(out_file, 10, show=False) as imout:
+
+            xs = self.api.data('depthltCal')
+            print('depthltCal', len(xs))
+            for sid, t, x in xs:
+                print("depthltCal:", sid, t)
+                self.diqs[sid][t] = holoframe.load(x)
+
             with logging_redirect_tqdm():
                 while True:
                     pbar.set_description('waiting for data...')
@@ -152,8 +166,8 @@ class ObjectsApp:
 
                             # predict objects
                             main: dict = diqmain[tms]
-                            im = main['image']
-                            xyxy, confs, class_ids, labels = self.predict(im)
+                            im = cv2.cvtColor(main['image'], cv2.COLOR_RGB2BGR)
+                            xyxy, confs, class_ids, labels, features = self.predict(im)
                             # normalize box
                             h, w = im.shape[:2]
                             xyxyn = xyxy.copy()
@@ -165,17 +179,25 @@ class ObjectsApp:
                                 [xyxyn, confs, class_ids, labels])
 
                             # send 2d box - TODO: parallelize
-                            await ws_push.send_data([
-                                jsondump(objs),
-                                jsondump(self.detect_hands(labels, confs)),
-                            ], ['detic:image', 'detic:hands'], [t, t])
+                            #await ws_push.send_data([
+                            #    jsondump(objs),
+                            #    jsondump(self.detect_hands(labels, confs)),
+                            #], ['detic:image', 'detic:hands'], [t, t])
 
 
                             # convert 2d locations to 3d
 
                             # get the points object
                             t_depth = diqdepth.closest(tms)
-                            if not t_depth or abs(t_depth - tms) > self.max_depth_time_diff:
+                            #if not t_depth or abs(t_depth - tms) > self.max_depth_time_diff:
+                            #    continue
+                            if t_depth is None:
+                                log.debug('no depth')
+                                continue
+                            log.debug('dt: depth=%f', tms-t_depth)
+                            t_depthcal = diqdepthcal.last(None)
+                            if t_depthcal is None:
+                                tqdm.tqdm.write("no depthltCal !")
                                 continue
                             pts3d = self.get_pts3d(tms, t_depth, diqdepthcal.last())
 
@@ -190,9 +212,41 @@ class ObjectsApp:
                                 obj['depth_map_dist'] = dist
 
                             # TODO: object tracking ... and add tracking info to 
-                            
+                            tracker.step([
+                                ds.Detection(
+                                    ds.util.xywh2tlwh(100*np.r_[o['xyz_center'], [self.obj_size, self.obj_size, self.obj_size]]), 
+                                    o['confidence'], features[i], meta=o)
+                                for i, o in enumerate(objs)
+                            ], tms/1000)
+
+                            tracks = [
+                                t for t in tracker.tracks
+                                if #t.is_confirmed() and 
+                                t.steps_since_update <= 0
+                            ]
+                            #print([
+                            #    (t.is_confirmed(), t.steps_since_update) for t in tracker.tracks
+                            #])
+                            for t in tracker.tracks:
+                                print(
+                                    f'{t.meta[-1]["label"]}_{t.track_id}{"" if t.is_confirmed() else "?"}',
+                                    t.steps_since_update, t.hits, list(t.xywh))
+                            print()
+
                             # send 3d boxes
-                            await ws_push.send_data([jsondump(objs)], ['detic:world'], [t])
+                            #await ws_push.send_data([jsondump(objs)], ['detic:world'], [t])
+
+                            if imout.active:
+                                tlbr = np.asarray([t.meta[-1]['xyxyn'] for t in tracks])
+                                if len(tlbr):
+                                    tlbr[...,[0,2]] *= w
+                                    tlbr[...,[1,3]] *= h
+                                labels = [
+                                    f'{t.meta[-1]["label"]}{t.track_id}{"" if t.is_confirmed() else "?"}'
+                                    for t in tracks
+                                ]
+                                colors = [t.color for t in tracks]
+                                imout.output(draw_boxes(im, tlbr, labels, colors,size=0.6), tms/1000.)
                         
 
                         
@@ -204,13 +258,13 @@ class ObjectsApp:
                             pts3d = self.get_pts3d(t_main, tms, diqdepthcal.last())
                             
                             # write point cloud
-                            await ws_push.send_data([
-                                jsondump({
-                                    'time': t,
-                                    'color': (pts3d.rgb * 255).astype('uint8'),
-                                    'xyz_world': pts3d.xyz_depth_world,
-                                }),
-                            ], ['pointcloud'], [t])
+                            #await ws_push.send_data([
+                            #    jsondump({
+                            #        'time': t,
+                            #        'color': (pts3d.rgb * 255).astype('uint8'),
+                            #        'xyz_world': pts3d.xyz_depth_world,
+                            #    }),
+                            #], ['pointcloud'], [t])
 
 
     def change_recipe(self, recipe_id):
@@ -229,7 +283,8 @@ class ObjectsApp:
         class_ids = insts.pred_classes.numpy().astype(int)
         confs = insts.scores.numpy()
         labels = self.model.labels[class_ids]
-        return xyxy, confs, class_ids, labels
+        features = insts.clip_features.numpy()
+        return xyxy, confs, class_ids, labels, features
 
     def detect_hands(self, labels, confs):
         is_person = labels == 'person'
