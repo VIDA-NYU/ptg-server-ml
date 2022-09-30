@@ -82,8 +82,8 @@ services:
     build: ./reasoning
     container_name: reasoning
     restart: unless-stopped
-    #volumes:
-    #  - ${VOLUMES}/models:/src/app/models
+    volumes:
+      - ${VOLUMES}/models/reasoning:/src/app/models
     devices:
      - /dev/nvidia0:/dev/nvidia0
 
