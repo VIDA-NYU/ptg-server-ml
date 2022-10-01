@@ -4,6 +4,7 @@ import asyncio
 import logging
 import ptgctl
 import ptgctl.util
+from os.path import join
 from tim_reasoning import StateManager
 
 logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(name)s:%(message)s')
@@ -19,8 +20,8 @@ OBJECTS_SID = 'detic:image'
 REASONING_SID = 'reasoning'
 
 
-CONFIGS = {'tagger_model_path': '/src/app/models/recipe_tagger',
-           'bert_classifier_path': '/src/app/models/bert_classifier'}
+CONFIGS = {'tagger_model_path': join(os.environ['REASONING_MODELS_PATH'], 'recipe_tagger'),
+           'bert_classifier_path': join(os.environ['REASONING_MODELS_PATH'], 'bert_classifier')}
 
 
 class ReasoningApp:
