@@ -111,7 +111,7 @@ def main(annotations_file, video, features_file=None, win_size=30, plot=False):
     if features_file:
         import h5py
         from ptgprocess.egovlp import EgoVLP
-        from hmmlearn.hmm import GaussianHMM
+        from hmmlearn.hmm import GaussianHMM, MultinomialHMM
 
         with h5py.File(features_file) as hf:
             print(set(hf))
@@ -134,7 +134,7 @@ def main(annotations_file, video, features_file=None, win_size=30, plot=False):
         plot_matrix(sim_gauss, None, actions)
         plt.savefig('sim_gaussian.png')
 
-        hmmn = GaussianHMM(n_components=len(actions), covariance_type="full")
+        hmmn = MultinomialHMM(n_components=len(actions), covariance_type="full")
         startprob = np.zeros(len(actions))
         startprob[0] = startprob
         hmmn.startprob_ = startprob
