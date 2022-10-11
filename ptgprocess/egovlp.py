@@ -19,7 +19,7 @@ import transformers
 device = "cuda" if torch.cuda.is_available() else "cpu"
 localfile = lambda *fs: os.path.abspath(os.path.join(os.path.dirname(__file__), *fs))
 
-MODEL_DIR = os.getenv('MODEL_DIR') or localfile('../models')
+MODEL_DIR = os.getenv('MODEL_DIR') or 'models' # localfile('../models')
 
 EGOVLP_CHECKPOINT = os.path.join(MODEL_DIR, 'epic_mir_plus.pth')
 
