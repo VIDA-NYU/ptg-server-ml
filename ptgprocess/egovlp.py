@@ -33,7 +33,7 @@ sys.path.append(EGOVLP_DIR)
 class EgoVLP(nn.Module):
     norm_mean=(0.485, 0.456, 0.406)
     norm_std=(0.229, 0.224, 0.225)
-    def __init__(self, checkpoint=EGOVLP_CHECKPOINT, input_res=224, center_crop=256, n_samples=10, device=device, **kw):  #  tokenizer_model="distilbert-base-uncased"
+    def __init__(self, checkpoint=EGOVLP_CHECKPOINT, input_res=224, center_crop=256, n_samples=10, device=device):  #  tokenizer_model="distilbert-base-uncased"
         super().__init__()
         self.q = collections.deque(maxlen=n_samples)
         print(checkpoint)

@@ -1,4 +1,5 @@
 import os
+from collections import deque
 import numpy as np
 import h5py
 import cv2
@@ -6,10 +7,12 @@ import cv2
 def run(src, data_dir, out_dir, n_frames=16, fps=30, **kw):
     from ptgprocess.egovlp import EgoVLP
     from ptgprocess.util import VideoInput, VideoOutput, draw_text_list, get_vocab
-    model = EgoVLP(n_frames=n_frames, **kw)
+    model = EgoVLP(**kw)
 
     out_file = get_out_file(src, data_dir, out_dir)
     print(out_file)
+
+    q = deque(maxlen=n_frames)
 
     # compute
     i_frames = []
@@ -17,8 +20,8 @@ def run(src, data_dir, out_dir, n_frames=16, fps=30, **kw):
     with VideoInput(src, fps, give_time=False) as vin:
         for j, (i, im) in enumerate(vin):
             im = cv2.resize(im, (600, 400))
-            model.add_image(im)
-            z_video = model.predict_recent().detach().cpu().numpy()
+            q.append(model.prepare_image(im))
+            z_video = model.encode_video(torch.stack(list(q))).detach().cpu().numpy()
             i_frames.append(i)
             results.append(z_video)
 
