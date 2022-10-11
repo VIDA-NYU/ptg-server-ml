@@ -4,6 +4,8 @@ import sys
 import collections
 import tqdm
 
+os.environ['LOCAL_RANK'] = os.getenv('LOCAL_RANK') or '0'
+
 import cv2
 import numpy as np
 from PIL import Image
@@ -31,7 +33,7 @@ sys.path.append(EGOVLP_DIR)
 class EgoVLP(nn.Module):
     norm_mean=(0.485, 0.456, 0.406)
     norm_std=(0.229, 0.224, 0.225)
-    def __init__(self, checkpoint=EGOVLP_CHECKPOINT, input_res=224, center_crop=256, n_samples=10, device=device, **kw):  #  tokenizer_model="distilbert-base-uncased"
+    def __init__(self, checkpoint=EGOVLP_CHECKPOINT, input_res=224, center_crop=256, n_samples=10, device=device):  #  tokenizer_model="distilbert-base-uncased"
         super().__init__()
         self.q = collections.deque(maxlen=n_samples)
         print(checkpoint)
@@ -72,9 +74,12 @@ class EgoVLP(nn.Module):
             NormalizeVideo(mean=self.norm_mean, std=self.norm_std),
         ])
 
-    def forward(self, video, text):
+    def forward(self, video, text, return_sim=True):
         with torch.no_grad():
-            text_embed, vid_embed = self.model({}, return_embeds=True)
+            text_embed, vid_embed = self.model({'video': video, 'text': text}, return_embeds=True)
+            if return_sim:
+                return self.similarity(text_embed, vid_embed)
+            return vid_embed, text_embed
 
     def encode_text(self, text, prompt=None):
         '''Encode text prompts. Returns formatted prompts and encoded CLIP text embeddings.'''
@@ -85,20 +90,24 @@ class EgoVLP(nn.Module):
                 text = self.tokenizer(text, return_tensors='pt', padding=True, truncation=True)
             return self.model.compute_text({key: val.to(self.device) for key, val in text.items()})
 
-    def add_image(self, im):
+    def encode_video(self, video):
+        with torch.no_grad():
+            return self.model.compute_video(video)
+
+    def prepare_image(self, im):
         im = im[:,:,::-1]
         im = im.transpose(2, 0, 1)
         im = torch.as_tensor(im.astype(np.float32))[:,None] / 255
         im = self.transforms(im)
         im = im.transpose(1, 0)
-        self.q.append(im)
+        return im
+
+    def add_image(self, im):
+        self.q.append(self.prepare_image(im))
         return self
 
     def predict_recent(self):
-        X = torch.stack(list(self.q), dim=1).to(self.device)
-        with torch.no_grad():
-            z_video = self.model.compute_video(X)
-        return z_video
+        return self.encode_video(torch.stack(list(self.q), dim=1).to(self.device))
 
     def similarity(self, z_text, z_video, dual=False):
         if dual:
