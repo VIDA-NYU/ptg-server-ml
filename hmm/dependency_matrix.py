@@ -64,10 +64,14 @@ def get_from_timed_actions_in_video(annotations_file, video, include_no_action=T
             nr = df.loc[i+1]
             matrix[actions2i[nr['narration']],actions2i[r['narration']]] += 1
 
+    matrix /= np.max(matrix,axis=1,keepdims=True)
+    matrix = np.exp(matrix)/np.sum(np.exp(matrix),axis=1,keepdims=True)
+
     if plot:
         fig = plt.figure(figsize=(30,30))
         ax = fig.add_subplot(111)
-        cax = ax.matshow(np.exp(matrix/np.sum(matrix,axis=1)), interpolation='nearest')
+        #cax = ax.matshow(np.exp(matrix/np.sum(matrix,axis=1)), interpolation='nearest')
+        cax = ax.matshow(matrix, interpolation='nearest')
    
         alpha = list(actions2i.keys())
         xaxis = np.arange(len(alpha))
