@@ -46,7 +46,7 @@ def get_action_df(annotations_file, video, include_no_action=True):
     df['nframes'] = df.stop_frame - df.start_frame
     return df
 
-def get_transition_matrix(df, actions, win_size=30):
+def get_transition_matrix(df, actions, win_size=30, confusion=0.1):
     ############################
     # create dependency matrix #
     ############################
@@ -64,6 +64,7 @@ def get_transition_matrix(df, actions, win_size=30):
             matrix[actions2i[nr['narration']],actions2i[r['narration']]] += 1
 
     matrix /= np.max(matrix,axis=1,keepdims=True)
+    matrix += confusion
     matrix = np.exp(matrix) / np.sum(np.exp(matrix), axis=1, keepdims=True)
     return matrix
 
@@ -78,14 +79,29 @@ def get_emission_matrix(actions, confusion=0.1):
     for i, ai in enumerate(actions):
         for j, aj in enumerate(actions[i+1:], i+1):
             matrix[i, j] = matrix[j, i] = wordiou(ai, aj)
+
     matrix += confusion
     matrix = np.exp(matrix) / np.sum(np.exp(matrix), axis=1, keepdims=True)
     return matrix
 
-def get_gaussian_features(actions, cov=0.25):
+def get_gaussian_features(actions, cov=0.25, margin=0.1):
     means = np.eye(len(actions))
     cov *= np.ones((len(actions), len(actions)))
+    cov += np.random.randn(*cov.shape)*0.01
+    cov = np.maximum(cov, 0.1)
+    means += margin
+    means = np.exp(means) / np.sum(np.exp(means), axis=1, keepdims=True)
     return means, cov
+
+def probs_to_obs_counts(sim, n=100):
+    counts = (sim * n).astype(int)
+    print(counts.sum(-1).tolist())
+    imax = np.argmax(counts, axis=-1)
+    #ij = np.ix_(np.arange(len(counts)), imax)
+    counts[np.arange(len(counts)), imax] += n - counts.sum(-1)
+    assert (counts.sum(-1) == n).all(), np.unique(counts.sum(-1) - n, return_counts=True)
+    return counts
+    
 
 def plot_matrix(matrix, xlabels=None, ylabels=None, **kw):
     fig = plt.figure(figsize=(30,30))
@@ -104,47 +120,67 @@ def plot_matrix(matrix, xlabels=None, ylabels=None, **kw):
 def main(annotations_file, video, features_file=None, win_size=30, plot=False):
     df = get_action_df(annotations_file, video)
     actions = df.narration.unique()
+    print(actions)
     trans = get_transition_matrix(df, actions, win_size=win_size)
-    emis = get_emission_matrix(actions)
+    emis = get_emission_matrix(actions)[:,1:]
     means, cov = get_gaussian_features(actions)
+    means, cov = means[:,1:], cov[:,1:]
 
     if features_file:
         import h5py
+        import torch
         from ptgprocess.egovlp import EgoVLP
         from hmmlearn.hmm import GaussianHMM, MultinomialHMM
 
         with h5py.File(features_file) as hf:
             print(set(hf))
             Z_video = hf['egovlp-n=10-fps=10'][:]
+            i_frame = Z_video['frame']
+            Z_video = Z_video['Z']
         model = EgoVLP()
-        Z_text = model.encode_text(actions)
-        sim = model.similarity(Z_text, Z_video)
+        Z_text = model.encode_text(list(actions[1:])).cpu()
+        sim = model.similarity(Z_text, torch.Tensor(Z_video)).numpy()
         plot_matrix(sim, None, actions)
         plt.savefig('sim-raw.png')
 
-        hmmg = GaussianHMM(n_components=len(actions), covariance_type="full")
+        hmmg = GaussianHMM(n_components=len(actions), covariance_type="diag")
         startprob = np.zeros(len(actions))
-        startprob[0] = startprob
+        startprob[0] = 1
         hmmg.startprob_ = startprob
         hmmg.transmat_ = trans
         hmmg.means_ = means
         hmmg.covars_ = cov
 
-        sim_gauss = hmmg.predict(sim)
-        plot_matrix(sim_gauss, None, actions)
-        plt.savefig('sim_gaussian.png')
+        actions_gauss = hmmg.predict(sim)
+        pd.DataFrame({
+            'frame': i_frame, 
+            'top1': actions[1:][np.argmax(sim, axis=-1)], 
+            'gmm': actions[actions_gauss]
+        }).to_csv('gaus.csv', sep='\t')
+        #print(list(actions[actions_gauss]))
+        #plot_matrix(sim_gauss, None, actions)
+        #plt.savefig('sim_gaussian.png')
 
-        hmmn = MultinomialHMM(n_components=len(actions), covariance_type="full")
+        hmmn = MultinomialHMM(n_components=len(actions), n_trials=100)
         startprob = np.zeros(len(actions))
-        startprob[0] = startprob
+        startprob[0] = 1
         hmmn.startprob_ = startprob
         hmmn.transmat_ = trans
-        hmmn.emissionprob_ = means
+        hmmn.emissionprob_ = emis
 
-        sim_mn = hmmn.predict(sim)
-        plot_matrix(sim_mn, None, actions)
-        plt.savefig('sim_multinomial.png')
-
+        actions_mn = hmmn.predict(probs_to_obs_counts(sim, hmmn.n_trials))
+        pd.DataFrame({
+            'frame': i_frame, 
+            'top1': actions[1:][np.argmax(sim, axis=-1)], 
+            'gmm': actions[actions_mn]
+        }).to_csv('mn.csv', sep='\t')
+        #print(list(actions[actions_mn]))
+        #sim_mn = np.zeros_like(sim)
+        #sim_mn[:,actions_mn] = 1
+        #plot_matrix(sim_mn, None, actions)
+        #plt.savefig('sim_multinomial_100.png')
+    
+    np.savez('hmm.npz', trans=trans, emmission=emis, means=means, cov=cov)
     if plot:
         plot_matrix(trans, actions, actions)
         plt.savefig('transition.png')
