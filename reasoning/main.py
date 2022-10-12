@@ -17,7 +17,8 @@ UPDATE_STEP_SID = 'event:recipe:step'
 ACTIONS_CLIP_SID = 'clip:action:steps'
 ACTIONS_EGOVLP_SID = 'egovlp:action:steps'
 OBJECTS_SID = 'detic:image'
-REASONING_SID = 'reasoning'
+REASONING_STATUS_SID = 'reasoning:check_status'
+REASONING_ENTITIES_SID = 'reasoning:entities'
 
 
 CONFIGS = {'tagger_model_path': join(os.environ['REASONING_MODELS_PATH'], 'recipe_tagger'),
@@ -45,15 +46,20 @@ class ReasoningApp:
     async def run_reasoning(self, prefix='', top=5, use_egovlp=True):
         actions_sid = prefix + ACTIONS_EGOVLP_SID if use_egovlp else prefix + ACTIONS_CLIP_SID
         objects_sid = prefix + OBJECTS_SID
-        output_sid = prefix + REASONING_SID
+        re_check_status_sid = prefix + REASONING_STATUS_SID
+        re_entities_sid = prefix + REASONING_ENTITIES_SID
 
         async with self.api.data_pull_connect([actions_sid, objects_sid, RECIPE_SID, SESSION_SID, UPDATE_STEP_SID], ack=True) as ws_pull, \
-                   self.api.data_push_connect([output_sid], batch=True) as ws_push:
+                   self.api.data_push_connect([re_check_status_sid, re_entities_sid], batch=True) as ws_push:
 
-            recipe_id = self.api.sessions.current_recipe()
+            recipe_id = self.api.session.current_recipe()
             first_step = self.start_recipe(recipe_id)
             if first_step is not None:
-                await ws_push.send_data([orjson.dumps(first_step)])
+                await ws_push.send_data([orjson.dumps(first_step)], re_check_status_sid)
+
+            entities = self.state_manager.get_entities()
+            if entities is not None:
+                await ws_push.send_data([orjson.dumps(entities)], re_entities_sid)
 
             while True:
                 for sid, timestamp, data in await ws_pull.recv_data():
@@ -61,7 +67,12 @@ class ReasoningApp:
                         recipe_id = data.decode('utf-8')
                         first_step = self.start_recipe(recipe_id)
                         if first_step is not None:
-                            await ws_push.send_data([orjson.dumps(first_step)])
+                            await ws_push.send_data([orjson.dumps(first_step)], re_check_status_sid)
+
+                        entities = self.state_manager.get_entities()
+                        if entities is not None:
+                            await ws_push.send_data([orjson.dumps(entities)], re_entities_sid)
+
                         continue
                     elif sid == SESSION_SID:  # A call to start a new session
                         self.state_manager.reset()
@@ -75,7 +86,7 @@ class ReasoningApp:
                         step_index = int(data)
                         updated_step = self.state_manager.set_user_feedback(step_index)
                         if updated_step is not None:
-                            await ws_push.send_data([orjson.dumps(updated_step)])
+                            await ws_push.send_data([orjson.dumps(updated_step)], re_check_status_sid)
                         continue
 
                     action_predictions = orjson.loads(data)
@@ -84,7 +95,7 @@ class ReasoningApp:
                     recipe_status = self.state_manager.check_status(top_actions)
                     logger.info(f'Reasoning outputs: {str(recipe_status)}')
                     if recipe_status is not None:
-                        await ws_push.send_data([orjson.dumps(recipe_status)])
+                        await ws_push.send_data([orjson.dumps(recipe_status)], re_check_status_sid)
 
     @ptgctl.util.async2sync
     async def run(self, *args, **kwargs):
