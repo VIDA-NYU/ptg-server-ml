@@ -86,7 +86,7 @@ class In3DApp:
                             
                             d = orjson.loads(buffer)
                             pt3d = hist[k]
-                            h,w = pt3d.im_shape[:2]
+                            h,w = pt3d.im_shape
                             
                             xyxy = np.array([o['xyxyn'] for o in d]).reshape(-1, 4)
                             xyxy[:, 0] *= w 
@@ -134,7 +134,7 @@ class In3DApp:
                         await ws_push.send_data([
                             jsondump({
                                 'time': dts,
-                                'color': (pts3d.rgb * 255).astype('uint8'),
+                                'color': pts3d.rgb,
                                 'xyz_world': pts3d.xyz_depth_world,
                             }),
                         ], ['pointcloud'], [dts])
