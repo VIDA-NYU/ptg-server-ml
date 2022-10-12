@@ -33,12 +33,12 @@ class ReasoningApp:
         self.state_manager = StateManager(CONFIGS)
 
     def start_recipe(self, recipe_id):
-        logger.info('Starting recipe, ID=%s...' % str(recipe_id))
+        logger.info(f'Starting recipe, ID={str(recipe_id)}')
         if recipe_id is not None:
             recipe = self.api.recipes.get(recipe_id)
-            logger.info('Loaded recipe: %s' % str(recipe))
+            logger.info(f'Loaded recipe: {str(recipe)}')
             step_data = self.state_manager.start_recipe(recipe)
-            logger.info('First step: %s' % str(step_data))
+            logger.info(f'First step: {str(step_data)}')
 
             return step_data
 
@@ -80,9 +80,9 @@ class ReasoningApp:
 
                     action_predictions = orjson.loads(data)
                     top_actions = sorted(action_predictions.items(), key=lambda x: x[1], reverse=True)[:top]
-                    logger.info('Perception outputs: %s' % str(top_actions))
+                    logger.info(f'Perception outputs: {str(top_actions)}')
                     recipe_status = self.state_manager.check_status(top_actions)
-                    logger.info('Reasoning outputs: %s' % str(recipe_status))
+                    logger.info(f'Reasoning outputs: {str(recipe_status)}')
                     if recipe_status is not None:
                         await ws_push.send_data([orjson.dumps(recipe_status)])
 
