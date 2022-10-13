@@ -23,8 +23,10 @@ class VideoMAE(nn.Module):
         self.model.to(device)
         self.device = device
         self.labels = self.model.config.id2label
+        if isinstance(self.labels, dict):
+            self.labels = np.array([self.labels.get(i, '') for i in range(max(self.labels)+1)])
 
-    def __call__(self, video):
+    def forward(self, video):
         with torch.no_grad():
             encoding = self.fe(video, return_tensors="pt")
             #print(encoding.pixel_values.shape)
@@ -64,9 +66,9 @@ def run(src, out_file=None, n_frames=16, fps=10, stride=1, show=None, ann_root=N
                 topk_text = [f'{vocab[i]} ({logits[i]:.2%})' for i in i_topk]
 
                 tqdm.tqdm.write(f'top: {topk}')
+                csvout.write([t] + logits.tolist())
             imout.output(draw_text_list(im, topk_text)[0])
             
-            csvout.write([t] + logits.tolist())
 
 if __name__ == '__main__':
     import fire

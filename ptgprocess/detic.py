@@ -215,7 +215,7 @@ class ZeroShotClassifier2(ZeroShotClassifier):
 
 
 
-def run(src, vocab='lvis', ann_root=None, include=None, exclude=None, out_file=None, fps=10, show=None, **kw):
+def run(src, vocab=None, ann_root=None, include=None, exclude=None, out_file=None, fps=10, show=None, **kw):
     """Run multi-target tracker on a particular sequence.
     """
     from ptgprocess.util import VideoInput, VideoOutput, video_feed, draw_boxes, get_vocab
@@ -225,8 +225,9 @@ def run(src, vocab='lvis', ann_root=None, include=None, exclude=None, out_file=N
     if out_file is True:
         out_file='detic_'+os.path.basename(src)
 
-    vocab = get_vocab(vocab, ann_root, include, exclude)
-    assert vocab, 'you must set vocab'
+    if vocab is not None and not (isinstance(vocab, str) and vocab in BUILDIN_METADATA_PATH):
+        vocab = get_vocab(vocab, ann_root, include, exclude)
+        assert vocab, 'you must set vocab'
     model.set_vocab(vocab)
 
     with VideoInput(src, fps) as vin, \
