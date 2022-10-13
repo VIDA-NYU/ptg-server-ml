@@ -48,12 +48,13 @@ class BaseEgoHos(nn.Module):
         self.classes = self.model.CLASSES
         self.addt_model=None
 
-    def forward(self, img):
+    def forward(self, img, addt=None, include_addt=True):
         data = {'img': img, 'img_shape': img.shape, 'ori_shape': img.shape, 'filename': '__.png', 'ori_filename': '__.png'}
         data = self.preprocess(data)
         
         # add additional segmentation maps
-        addt = self.addt_model(img) if self.addt_model is not None else None
+        if addt is None and self.addt_model is not None:
+            addt = self.addt_model(img)
         if addt is not None:
             data['img'] = [
                     torch.cat([im] + [self.pad_resize(x, im) for x in xs[::-1]], dim=0)
@@ -73,7 +74,7 @@ class BaseEgoHos(nn.Module):
             result = self.model(return_loss=False, rescale=True, **data)
         
         result = [x[None] for x in result]
-        if addt is not None:
+        if include_addt and addt is not None:
             result = [np.concatenate([x]+list(xs)) for x, *xs in zip(result, addt)]
         return result
 
@@ -97,25 +98,39 @@ class EgoHosHands(BaseEgoHos):
         super().__init__(config, **kw)
 
 class EgoHosCB(BaseEgoHos):
-    def __init__(self, config='twohands_to_cb_ccda', **kw):
+    def __init__(self, config='twohands_to_cb_ccda', addt=True, **kw):
         super().__init__(config, **kw)
-        self.addt_model = EgoHosHands()
+        self.addt_model = EgoHosHands() if addt else None
 
 class EgoHosObj1(BaseEgoHos):
-    def __init__(self, config='twohands_cb_to_obj1_ccda', **kw):
+    def __init__(self, config='twohands_cb_to_obj1_ccda', addt=True, **kw):
         super().__init__(config, **kw)
-        self.addt_model = EgoHosCB()
+        self.addt_model = EgoHosCB() if addt else None
 
 class EgoHosObj2(BaseEgoHos):
-    def __init__(self, config='twohands_cb_to_obj2_ccda', **kw):
+    def __init__(self, config='twohands_cb_to_obj2_ccda', addt=True, **kw):
         super().__init__(config, **kw)
+        self.addt_model = EgoHosCB() if addt else None
+
+class EgoHosObjBoth(nn.Module):
+    def __init__(self):
+        super().__init__()
         self.addt_model = EgoHosCB()
+        self.obj1_model = EgoHosObj1()
+        self.obj2_model = EgoHosObj2()
+
+    def forward(self, im, addt=None):
+        if addt is not None:
+            addt = self.addt_model(im)
+        obj1 = self.obj1_model(im, addt)
+        obj2 = self.obj1_model(im, addt)
+        return obj1, obj2
 
 
-MODELS = {'hands': EgoHosHands, 'obj1': EgoHosObj1, 'obj2': EgoHosObj2, 'cb': EgoHosCB}
+MODELS = {'hands': EgoHosHands, 'obj1': EgoHosObj1, 'obj2': EgoHosObj2, 'objs': EgoHosObjBoth, 'cb': EgoHosCB}
 
-class EgoHos(nn.Module):
-    def __new__(self, mode='obj2', *a, **kw):
+class EgoHos(BaseEgoHos):
+    def __new__(cls, mode='obj1', *a, **kw):
         return MODELS[mode](*a, **kw)
   
 
