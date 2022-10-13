@@ -11,19 +11,13 @@ from PIL import Image, ImageOps
 #detic_path = os.getenv('DETIC_PATH') or 'Detic'
 #sys.path.insert(0,  detic_path)
 
-from mmseg.apis import inference_segmentor, init_segmentor
+from mmseg.apis import init_segmentor
 from mmcv.parallel import collate, scatter
 from mmseg.datasets.pipelines import Compose
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 MODEL_DIR = os.path.join(os.getenv("MODEL_DIR") or 'models', 'egohos')
-CFG_FILE = os.path.join(MODEL_DIR, 'upernet_swin_base_patch4_window12_512x512_160k_egohos_handobj2_pretrain_480x360_22K/upernet_swin_base_patch4_window12_512x512_160k_egohos_handobj2_pretrain_480x360_22K.py')
-CHECKPOINT = os.path.join(MODEL_DIR, 'upernet_swin_base_patch4_window12_512x512_160k_egohos_handobj2_pretrain_480x360_22K/best_mIoU_iter_42000.pth')
-
-
-
-
 
 class BaseEgoHos(nn.Module):
     def __init__(self, config, checkpoint=None, device=device):
@@ -38,11 +32,18 @@ class BaseEgoHos(nn.Module):
             checkpoint = max(glob.glob(os.path.join(os.path.dirname(config), '*.pth')))
         
         #print('using device:', device)
+        if device == 'cpu':
+            import mmcv
+            config = mmcv.Config.fromfile(config)
+            config["norm_cfg"]["type"] = "BN"
+            config["model"]["backbone"]["norm_cfg"]["type"] = "BN"
+            config["model"]["decode_head"]["norm_cfg"]["type"] = "BN"
+            config["model"]["auxiliary_head"]["norm_cfg"]["type"] = "BN"
         self.model = init_segmentor(config, checkpoint, device=device)
         self.preprocess = Compose(self.model.cfg.data.test.pipeline[1:])
 
         self.device = device
-        self.is_cuda = next(self.model.parameters()).is_cuda
+        self.is_cuda = device != 'cpu'
         self.palette = get_palette(None, self.model.CLASSES)
         self.classes = self.model.CLASSES
         self.addt_model=None

@@ -15,7 +15,8 @@ from detectron2.utils.visualizer import Visualizer, random_color, ColorMode
 from detectron2.data import MetadataCatalog
 
 # Detic libraries
-detic_path = os.getenv('DETIC_PATH') or 'Detic'
+# detic_path = os.getenv('DETIC_PATH') or 'Detic'
+detic_path = os.path.join(os.path.dirname(__file__), 'Detic')
 sys.path.insert(0,  detic_path)
 sys.path.insert(0, os.path.join(detic_path, 'third_party/CenterNet2'))
 from detic.config import add_detic_config
@@ -214,7 +215,7 @@ class ZeroShotClassifier2(ZeroShotClassifier):
 
 
 
-def run(src, vocab, ann_root=None, include=None, exclude=None, out_file=None, fps=10, show=None, **kw):
+def run(src, vocab='lvis', ann_root=None, include=None, exclude=None, out_file=None, fps=10, show=None, **kw):
     """Run multi-target tracker on a particular sequence.
     """
     from ptgprocess.util import VideoInput, VideoOutput, video_feed, draw_boxes, get_vocab
