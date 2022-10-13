@@ -3,6 +3,8 @@
 ## Install
 
 ```bash
+# git clone (includes the model repos too)
+git clone --recursive git@github.com:VIDA-NYU/ptg-server-ml.git
 # install basic (no model dependencies)
 pip install -e .
 
