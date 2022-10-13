@@ -25,7 +25,8 @@ MODEL_DIR = os.getenv('MODEL_DIR') or 'models' # localfile('../models')
 
 EGOVLP_CHECKPOINT = os.path.join(MODEL_DIR, 'epic_mir_plus.pth')
 
-EGOVLP_DIR=os.getenv('EGOVLP_DIR') or 'EgoVLP'
+# EGOVLP_DIR=os.getenv('EGOVLP_DIR') or 'EgoVLP'
+EGOVLP_DIR = os.path.join(os.path.dirname(__file__), 'EgoVLP')
 sys.path.append(EGOVLP_DIR)
 
 
