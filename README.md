@@ -5,6 +5,8 @@
 ```bash
 # install basic (no model dependencies)
 pip install -e .
+
+export MODEL_DIR=models  # where do you want to store the weights?
 ```
 
 ## EgoVLP
@@ -20,8 +22,7 @@ pip install -e '.[egovlp]'
 # download the weights
 pip install gdown
 gdown https://drive.google.com/uc?id=1-SOQeXc-xSn544sJzgFLhC95hkQsm0BR
-unzip work_dirs.zip && rm work_dirs.zip
-mv work_dirs $MODEL_DIR/egohos
+mv epic_mir_plus.pth $MODEL_DIR/
 ```
 
 
