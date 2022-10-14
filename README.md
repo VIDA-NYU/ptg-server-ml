@@ -25,6 +25,9 @@ pip install -e '.[egovlp]'
 pip install gdown
 gdown https://drive.google.com/uc?id=1-SOQeXc-xSn544sJzgFLhC95hkQsm0BR
 mv epic_mir_plus.pth $MODEL_DIR/
+
+# to test with a mp4 file
+python -m ptgprocess.egovlp ./video.mp4 recipe:coffee:steps_simple
 ```
 
 
@@ -38,6 +41,9 @@ Zero-shot object detection
 ```bash
 pip install -e '.[detic]'
 # model downloads its own weights
+
+# to test with a mp4 file
+python -m ptgprocess.detic ./video.mp4 recipe:pinwheels:steps_simple
 ```
 
 ## EgoHOS
@@ -55,4 +61,8 @@ pip install gdown
 gdown https://drive.google.com/uc?id=1LNMQ6TGf1QaCjMgTExPzl7lFFs-yZyqX
 unzip work_dirs.zip && rm work_dirs.zip
 mv work_dirs $MODEL_DIR/egohos
+
+# to test with a mp4 file
+python -m ptgprocess.egohos ./video.mp4
+python -m ptgprocess.egohos ./video.mp4 --out-file # save to file
 ```
