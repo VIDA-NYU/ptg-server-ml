@@ -107,11 +107,10 @@ class In3DApp:
                             log.debug('%d/%d boxes valid. dist in [%f,%f]', valid.sum(), len(valid), dist.min(initial=np.inf), dist.max(initial=0))
 
                             for obj, xyz_center, valid, dist in zip(d, xyz_center, valid, dist):
-                                if obj['label'] in skipped_labels:
-                                    continue
                                 obj['xyz_center'] = xyz_center
                                 obj['depth_map_dist'] = dist
                             
+                            d = list(filter(lambda x: x['label'] not in skipped_labels, d))
                             await ws_push.send_data([jsondump(d)], ['detic:world'], [t])
                             continue
 
