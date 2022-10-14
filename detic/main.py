@@ -47,7 +47,7 @@ class DeticApp:
     async def _run(self):
         # stream ids
         in_sids = ['main']
-        out_sids = ['detic:image', 'detic:hands']
+        out_sids = ['detic:image', 'detic:image:for3d', 'detic:hands']
         recipe_sid = 'event:recipe:id'
 
         mean_person_confs_decay = 0
@@ -73,8 +73,8 @@ class DeticApp:
                             continue
                         
                         # compute box
-                        x = holoframe.load(buffer)
-                        im = x['image']
+                        main = holoframe.load(buffer)
+                        im = main['image']
                         xyxy, confs, class_ids, labels = self.predict(im)
                         xyxyn = boxnorm(xyxy, *im.shape[:2])
 
@@ -84,17 +84,24 @@ class DeticApp:
                         mean_person_confs = np.nanmean(person_confs)
                         mean_person_confs_decay = (1 - decay) * mean_person_confs + decay * mean_person_confs_decay
 
+                        objs = self.zip_objs(
+                            self.image_box_keys,
+                            [xyxyn, confs, class_ids, labels])
                         await ws_push.send_data([
-                            self.dump(
-                                self.image_box_keys,
-                                [xyxyn, confs, class_ids, labels]),
+                            jsondump(objs),
+                            jsondump({'objects': objs, 'image_params': {
+                                'shape': main['image'].shape,
+                                'focal': [main['focalX'], main['focalY']], 
+                                'principal': [main['principalX'], main['principalY']],
+                                'cam2world': main['cam2world'].tolist(),
+                            }}),
                             jsondump({
                                 'n_person_boxes': is_person.sum(),
                                 'max_conf': np.max(person_confs, initial=0),
                                 'mean_conf': mean_person_confs,
                                 'mean_conf_smooth': mean_person_confs_decay,
                             }),
-                        ], out_sids, [t, t])
+                        ], out_sids, [t, t, t])
                         
     def change_recipe(self, recipe_id):
         if not recipe_id:
@@ -114,8 +121,8 @@ class DeticApp:
         labels = self.model.labels[class_ids]
         return xyxy, confs, class_ids, labels
 
-    def dump(self, keys, xs):
-        return jsondump([dict(zip(keys, xs)) for xs in zip(*xs)])
+    def zip_objs(self, keys, xs):
+        return [dict(zip(keys, xs)) for xs in zip(*xs)]
 
 
 def jsondump(data):
