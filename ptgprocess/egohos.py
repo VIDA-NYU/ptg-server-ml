@@ -94,45 +94,58 @@ class BaseEgoHos(nn.Module):
 
 
 class EgoHosHands(BaseEgoHos):
+    output_names = ('hands',)
     def __init__(self, config='seg_twohands_ccda', **kw):
         super().__init__(config, **kw)
 
 class EgoHosCB(BaseEgoHos):
+    output_names = ('cb', 'hands')
     def __init__(self, config='twohands_to_cb_ccda', addt=True, **kw):
         super().__init__(config, **kw)
         self.addt_model = EgoHosHands() if addt else None
 
 class EgoHosObj1(BaseEgoHos):
+    output_names = ('obj1', 'cb', 'hands')
     def __init__(self, config='twohands_cb_to_obj1_ccda', addt=True, **kw):
         super().__init__(config, **kw)
         self.addt_model = EgoHosCB() if addt else None
 
 class EgoHosObj2(BaseEgoHos):
+    output_names = ('obj2', 'cb', 'hands')
     def __init__(self, config='twohands_cb_to_obj2_ccda', addt=True, **kw):
         super().__init__(config, **kw)
         self.addt_model = EgoHosCB() if addt else None
 
-class EgoHosObjBoth(nn.Module):
+class EgoHosObjs(nn.Module):
+    output_names = ('obj1', 'obj2', 'cb', 'hands')
     def __init__(self):
         super().__init__()
         self.addt_model = EgoHosCB()
-        self.obj1_model = EgoHosObj1()
-        self.obj2_model = EgoHosObj2()
+        self.obj1_model = EgoHosObj1(addt=False)
+        self.obj2_model = EgoHosObj2(addt=False)
+        self.classes = self.obj2_model.classes
 
     def forward(self, im, addt=None):
-        if addt is not None:
+        if addt is None:
             addt = self.addt_model(im)
-        obj1 = self.obj1_model(im, addt)
-        obj2 = self.obj1_model(im, addt)
-        return obj1, obj2
+        obj1 = self.obj1_model(im, addt, include_addt=False)
+        obj2 = self.obj1_model(im, addt, include_addt=False)
+        return [np.concatenate(xs) for xs in zip(obj1, obj2, addt)]
 
 
-MODELS = {'hands': EgoHosHands, 'obj1': EgoHosObj1, 'obj2': EgoHosObj2, 'objs': EgoHosObjBoth, 'cb': EgoHosCB}
+MODELS = {'hands': EgoHosHands, 'obj1': EgoHosObj1, 'obj2': EgoHosObj2, 'objs': EgoHosObjs, 'cb': EgoHosCB}
 
 class EgoHos(BaseEgoHos):
     def __new__(cls, mode='obj1', *a, **kw):
         return MODELS[mode](*a, **kw)
   
+
+def merge_segs(segs):
+    out = np.zeros_like(segs[0])
+    for s in segs:
+        where = s != 0
+        out[where] = s[where]
+    return out
 
 
 def get_palette(palette, classes):
