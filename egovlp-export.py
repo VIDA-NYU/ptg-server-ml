@@ -5,7 +5,7 @@ import h5py
 import cv2
 import torch
 
-def run(src, data_dir, out_dir, n_frames=16, fps=30, overwrite=False, **kw):
+def run(src, data_dir='.', out_dir='.', n_frames=16, fps=30, overwrite=False, **kw):
     out_file = get_out_file(src, data_dir, out_dir)
     dset_name = f'egovlp-n={n_frames}-fps={fps}'
     print(out_file, dset_name)
@@ -28,7 +28,7 @@ def run(src, data_dir, out_dir, n_frames=16, fps=30, overwrite=False, **kw):
         for j, (i, im) in enumerate(vin):
             im = cv2.resize(im, (600, 400))
             q.append(model.prepare_image(im))
-            z_video = model.encode_video(torch.stack(list(q)).cuda()).detach().cpu().numpy()
+            z_video = model.encode_video(torch.stack(list(q), dim=1).cuda()).detach().cpu().numpy()
             i_frames.append(i)
             results.append(z_video)
 
@@ -36,12 +36,14 @@ def run(src, data_dir, out_dir, n_frames=16, fps=30, overwrite=False, **kw):
     os.makedirs(os.path.dirname(out_file), exist_ok=True)
     with h5py.File(out_file, 'a') as hf:
         i = np.array(i_frames)
-        Z = np.concatenate(results)
+        Z = np.array(results[0])
+        print(i.shape, {z.shape for z in Z})
         data = np.zeros(len(i_frames), dtype=[('frame', 'i', i.shape[1:]), ('Z', 'f', Z.shape[1:])])
         data['frame'] = i
         data['Z'] = Z
 
-        dset_name = f'egovlp-n={n_frames}-fps={fps}'
+        if dset_name in hf:
+            del hf[dset_name]
         hf.create_dataset(dset_name, data=data)
     print('saved', out_file, dset_name, len(data))
 
