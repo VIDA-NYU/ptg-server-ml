@@ -10,7 +10,7 @@ def run(src, data_dir, out_dir, n_frames=16, fps=30, overwrite=False, **kw):
     dset_name = f'egovlp-n={n_frames}-fps={fps}'
     print(out_file, dset_name)
 
-    if not overwrite os.path.isfile(out_file):
+    if not overwrite and os.path.isfile(out_file):
         with h5py.File(out_file, 'a') as hf:
             if dset_name in hf:
                 return
