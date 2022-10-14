@@ -46,6 +46,10 @@ def get_action_df(annotations_file, video, include_no_action=True):
     df['nframes'] = df.stop_frame - df.start_frame
     return df
 
+
+def soft(x):
+    return np.exp(x) / np.sum(np.exp(x), axis=-1, keepdims=True)
+
 def get_transition_matrix(df, actions, win_size=30, confusion=0.1):
     ############################
     # create dependency matrix #
@@ -64,9 +68,7 @@ def get_transition_matrix(df, actions, win_size=30, confusion=0.1):
             matrix[actions2i[nr['narration']],actions2i[r['narration']]] += 1
 
     matrix /= np.max(matrix,axis=1,keepdims=True)
-    matrix += confusion
-    matrix = np.exp(matrix) / np.sum(np.exp(matrix), axis=1, keepdims=True)
-    return matrix
+    return soft(matrix + confusion)
 
 
 def wordiou(sentenceA, sentenceB):
@@ -80,18 +82,14 @@ def get_emission_matrix(actions, confusion=0.1):
         for j, aj in enumerate(actions[i+1:], i+1):
             matrix[i, j] = matrix[j, i] = wordiou(ai, aj)
 
-    matrix += confusion
-    matrix = np.exp(matrix) / np.sum(np.exp(matrix), axis=1, keepdims=True)
-    return matrix
+    return soft(matrix + confusion)
 
-def get_gaussian_features(actions, cov=0.25, margin=0.1):
+def get_gaussian_features(actions, cov=0.1, margin=0.1):
     means = np.eye(len(actions))
     cov *= np.ones((len(actions), len(actions)))
     cov += np.random.randn(*cov.shape)*0.01
     cov = np.maximum(cov, 0.1)
-    means += margin
-    means = np.exp(means) / np.sum(np.exp(means), axis=1, keepdims=True)
-    return means, cov
+    return soft(means + margin), cov
 
 def probs_to_obs_counts(sim, n=100):
     counts = (sim * n).astype(int)
@@ -101,7 +99,13 @@ def probs_to_obs_counts(sim, n=100):
     counts[np.arange(len(counts)), imax] += n - counts.sum(-1)
     assert (counts.sum(-1) == n).all(), np.unique(counts.sum(-1) - n, return_counts=True)
     return counts
-    
+
+def topk_to_obs_counts(sim, k=5):
+    ixs = np.argpartition(sim, -k, axis=-1)[...,-k:]
+    counts = np.zeros_like(sim)
+    for i, ii in enumerate(ixs.T):
+        counts[np.arange(len(counts)), ii] = i+1
+    return counts
 
 def plot_matrix(matrix, xlabels=None, ylabels=None, **kw):
     fig = plt.figure(figsize=(30,30))
@@ -143,6 +147,11 @@ def main(annotations_file, video, features_file=None, win_size=30, plot=False):
         plot_matrix(sim, None, actions)
         plt.savefig('sim-raw.png')
 
+        gt = [
+            df[(i >= df.start_frame) & (i < df.stop_frame)].narration
+            for i in i_frame
+        ]
+
         hmmg = GaussianHMM(n_components=len(actions), covariance_type="diag")
         startprob = np.zeros(len(actions))
         startprob[0] = 1
@@ -152,15 +161,7 @@ def main(annotations_file, video, features_file=None, win_size=30, plot=False):
         hmmg.covars_ = cov
 
         actions_gauss = hmmg.predict(sim)
-        pd.DataFrame({
-            'frame': i_frame, 
-            'top1': actions[1:][np.argmax(sim, axis=-1)], 
-            'gmm': actions[actions_gauss]
-        }).to_csv('gaus.csv', sep='\t')
-        #print(list(actions[actions_gauss]))
-        #plot_matrix(sim_gauss, None, actions)
-        #plt.savefig('sim_gaussian.png')
-
+        
         hmmn = MultinomialHMM(n_components=len(actions), n_trials=100)
         startprob = np.zeros(len(actions))
         startprob[0] = 1
@@ -168,28 +169,49 @@ def main(annotations_file, video, features_file=None, win_size=30, plot=False):
         hmmn.transmat_ = trans
         hmmn.emissionprob_ = emis
 
-        actions_mn = hmmn.predict(probs_to_obs_counts(sim, hmmn.n_trials))
-        pd.DataFrame({
+        topk=5
+
+        actions_mn100 = hmmn.predict(probs_to_obs_counts(sim, hmmn.n_trials))
+        hmmn.n_trials = np.sum(np.arange(topk)+1)
+        actions_mntopk = hmmn.predict(topk_to_obs_counts(sim, topk))
+        print(hmmn.n_trials, np.unique(topk_to_obs_counts(sim, topk).sum(-1), return_counts=True))
+
+        import librosa
+        actions_vit, logp = librosa.sequence.viterbi(sim.T, soft(trans[1:,1:]), return_logp=True)
+        print('viterbi', logp)
+        actions_vit_dis, logpdis = librosa.sequence.viterbi_discriminative(sim.T, soft(trans[1:,1:] * 2), return_logp=True)
+        print('viterbi discriminative', logpdis)
+        result_df = pd.DataFrame({
             'frame': i_frame, 
             'top1': actions[1:][np.argmax(sim, axis=-1)], 
-            'gmm': actions[actions_mn]
-        }).to_csv('mn.csv', sep='\t')
-        #print(list(actions[actions_mn]))
-        #sim_mn = np.zeros_like(sim)
-        #sim_mn[:,actions_mn] = 1
-        #plot_matrix(sim_mn, None, actions)
-        #plt.savefig('sim_multinomial_100.png')
-    
+            'ghmm': actions[actions_gauss],
+            'mnhmm_x100': actions[actions_mn100],
+            'mnhmm_topk': actions[actions_mntopk],
+            'viterbi': actions[1:][actions_vit],
+            'viterbi_discrim': actions[1:][actions_vit_dis],
+            'gt': ['|'.join(x) for x in gt],
+        }).set_index('frame')
+        result_df.to_csv('sequence.csv')
+        #accs = result_df.apply(lambda s: [c in gt for c, gt in zip(s, result_df['gt'])]).mean(axis=0).rename('accuracy')
+        #accs = (result_df == result_df['gt']).mean(0).rename('accuracy')
+        accs = pd.Series({
+            c: np.mean(np.asarray([x in g for x, g in zip(result_df[c], result_df['gt'])], dtype=float))
+            for c in result_df.columns
+        })
+        print(100*accs)
+
     np.savez('hmm.npz', trans=trans, emmission=emis, means=means, cov=cov)
     if plot:
         plot_matrix(trans, actions, actions)
         plt.savefig('transition.png')
-        plot_matrix(emis, actions, actions)
+        plot_matrix(emis, actions[1:], actions)
         plt.savefig('emmission.png')
         plot_matrix(means, actions, actions)
         plt.savefig('mean.png')
         plot_matrix(cov, actions, actions)
         plt.savefig('cov.png')
+
+
     return trans
 
 if __name__ == "__main__":
