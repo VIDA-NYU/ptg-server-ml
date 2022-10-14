@@ -3,14 +3,21 @@ from collections import deque
 import numpy as np
 import h5py
 import cv2
+import torch
 
-def run(src, data_dir, out_dir, n_frames=16, fps=30, **kw):
+def run(src, data_dir, out_dir, n_frames=16, fps=30, overwrite=False, **kw):
+    out_file = get_out_file(src, data_dir, out_dir)
+    dset_name = f'egovlp-n={n_frames}-fps={fps}'
+    print(out_file, dset_name)
+
+    if not overwrite os.path.isfile(out_file):
+        with h5py.File(out_file, 'a') as hf:
+            if dset_name in hf:
+                return
+
     from ptgprocess.egovlp import EgoVLP
     from ptgprocess.util import VideoInput, VideoOutput, draw_text_list, get_vocab
     model = EgoVLP(**kw)
-
-    out_file = get_out_file(src, data_dir, out_dir)
-    print(out_file)
 
     q = deque(maxlen=n_frames)
 
@@ -21,7 +28,7 @@ def run(src, data_dir, out_dir, n_frames=16, fps=30, **kw):
         for j, (i, im) in enumerate(vin):
             im = cv2.resize(im, (600, 400))
             q.append(model.prepare_image(im))
-            z_video = model.encode_video(torch.stack(list(q))).detach().cpu().numpy()
+            z_video = model.encode_video(torch.stack(list(q)).cuda()).detach().cpu().numpy()
             i_frames.append(i)
             results.append(z_video)
 
