@@ -29,14 +29,15 @@ def run(src, data_dir='.', out_dir='.', n_frames=16, fps=30, overwrite=False, **
             im = cv2.resize(im, (600, 400))
             q.append(model.prepare_image(im))
             z_video = model.encode_video(torch.stack(list(q), dim=1).cuda()).detach().cpu().numpy()
+            assert len(z_video) == 1, 'batch size should be one'
             i_frames.append(i)
-            results.append(z_video)
+            results.append(z_video[0])
 
     # save
     os.makedirs(os.path.dirname(out_file), exist_ok=True)
     with h5py.File(out_file, 'a') as hf:
         i = np.array(i_frames)
-        Z = np.array(results[0])
+        Z = np.array(results)
         print(i.shape, {z.shape for z in Z})
         data = np.zeros(len(i_frames), dtype=[('frame', 'i', i.shape[1:]), ('Z', 'f', Z.shape[1:])])
         data['frame'] = i
