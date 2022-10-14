@@ -34,7 +34,7 @@ sys.path.append(EGOVLP_DIR)
 class EgoVLP(nn.Module):
     norm_mean=(0.485, 0.456, 0.406)
     norm_std=(0.229, 0.224, 0.225)
-    def __init__(self, checkpoint=EGOVLP_CHECKPOINT, input_res=224, center_crop=256, n_samples=10, device=device):  #  tokenizer_model="distilbert-base-uncased"
+    def __init__(self, checkpoint=EGOVLP_CHECKPOINT, input_res=224, center_crop=256, n_samples=16, device=device):  #  tokenizer_model="distilbert-base-uncased"
         super().__init__()
         self.q = collections.deque(maxlen=n_samples)
         print(checkpoint)
@@ -111,19 +111,21 @@ class EgoVLP(nn.Module):
         return self.encode_video(torch.stack(list(self.q), dim=1).to(self.device))
 
     def similarity(self, z_text, z_video, dual=False):
-        if dual:
-            sim = sim_matrix_mm(z_text, z_video)
-            sim = F.softmax(sim / 500, dim=1) * sim
-            sim = F.softmax(100*sim, dim=0)
-            return sim.t()
-        sim = (sim_matrix(z_text, z_video) + 1) / 2
-        return F.softmax(100*sim.t(), dim=1)
+        return similarity(z_text, z_video, dual=dual)
+
+
+def similarity(z_text, z_video, temp=100, temp_inv=1/500, dual=False):
+    if dual:
+        sim = sim_matrix_mm(z_text, z_video)
+        sim = F.softmax(sim*temp_inv, dim=1) * sim
+        sim = F.softmax(temp*sim, dim=0)
+        return sim.t()
+    sim = (sim_matrix(z_text, z_video) + 1) / 2
+    return F.softmax(temp*sim.t(), dim=1)
 
 
 def sim_matrix(a, b, eps=1e-8):
-    """
-    added eps for numerical stability
-    """
+    #added eps for numerical stability
     a_n, b_n = a.norm(dim=1)[:, None], b.norm(dim=1)[:, None]
     a_norm = a / torch.max(a_n, eps * torch.ones_like(a_n))
     b_norm = b / torch.max(b_n, eps * torch.ones_like(b_n))
@@ -133,15 +135,16 @@ def sim_matrix_mm(a, b):
     return torch.mm(a, b.transpose(0, 1))
 
 
-def run(src, vocab, include=None, exclude=None, out_file=None, n_frames=20, fps=10, stride=1, show=None, ann_root=None, **kw):
+def run(src, vocab, include=None, exclude=None, out_file=None, n_frames=16, fps=10, stride=1, show=None, ann_root=None, **kw):
     from ptgprocess.record import CsvWriter
     from ptgprocess.util import VideoInput, VideoOutput, draw_text_list, get_vocab
-    model = EgoVLP(n_frames=n_frames, **kw)
+    model = EgoVLP(**kw)
 
     if out_file is True:
         out_file='egovlp_'+os.path.basename(src)
 
     vocab = get_vocab(vocab, ann_root, include, exclude)
+    q = collections.deque(maxlen=n_frames)
 
     z_text = model.encode_text(vocab)
     print(z_text.shape)
@@ -152,10 +155,11 @@ def run(src, vocab, include=None, exclude=None, out_file=None, n_frames=20, fps=
         topk = topk_text = []
         for i, (t, im) in enumerate(vin):
             im = cv2.resize(im, (600, 400))
-            model.add_image(im)
+            q.append(model.prepare_image(im))
+            print(len(q))
             if not i % stride:
-                z_video = model.predict_recent()
-                sim = model.similarity(z_text, z_video, dual=False).detach()[0]
+                z_video = model.encode_video(torch.stack(list(q), dim=1).to(device))
+                sim = similarity(z_text, z_video, dual=True).detach()[0]
                 i_topk = torch.topk(sim, k=5).indices.tolist()
                 topk = [vocab[i] for i in i_topk]
                 topk_text = [f'{vocab[i]} ({sim[i]:.2%})' for i in i_topk]
