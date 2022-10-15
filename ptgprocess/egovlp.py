@@ -110,11 +110,11 @@ class EgoVLP(nn.Module):
     def predict_recent(self):
         return self.encode_video(torch.stack(list(self.q), dim=1).to(self.device))
 
-    def similarity(self, z_text, z_video, dual=False):
-        return similarity(z_text, z_video, dual=dual)
+    def similarity(self, z_text, z_video, **kw):
+        return similarity(z_text, z_video, **kw)
 
 
-def similarity(z_text, z_video, temp=100, temp_inv=1/500, dual=False):
+def similarity(z_text, z_video, temp=1, temp_inv=1/500, dual=False):
     if dual:
         sim = sim_matrix_mm(z_text, z_video)
         sim = F.softmax(sim*temp_inv, dim=1) * sim
@@ -159,7 +159,7 @@ def run(src, vocab, include=None, exclude=None, out_file=None, n_frames=16, fps=
             print(len(q))
             if not i % stride:
                 z_video = model.encode_video(torch.stack(list(q), dim=1).to(device))
-                sim = similarity(z_text, z_video, dual=True).detach()[0]
+                sim = similarity(z_text, z_video, dual=False).detach()[0]
                 i_topk = torch.topk(sim, k=5).indices.tolist()
                 topk = [vocab[i] for i in i_topk]
                 topk_text = [f'{vocab[i]} ({sim[i]:.2%})' for i in i_topk]
