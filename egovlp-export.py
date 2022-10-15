@@ -52,6 +52,69 @@ def get_out_file(f, data_dir, out_dir):
     return os.path.join(out_dir, os.path.relpath(os.path.splitext(f)[0]+'.h5', data_dir))
 
 
+
+
+
+# visualization
+
+
+def vis(h5file, ann_file, video_id, name=None):
+    with h5py.File(h5file, 'r') as hf:
+        if name is None:
+            print('pick one of:')
+            print('\n'.join(hf))
+            return
+        d = hf[name][:]
+        print(d.dtype)
+        Z = d['Z']
+        frames = d['frame']
+    gt_plot(Z, frames, ann_file, video_id)
+
+def get_action_df(df):
+    import pandas as pd
+    df = df[['narration','start_frame','stop_frame']].sort_values('start_frame')
+    overlaps = df.start_frame <= df.stop_frame.shift().fillna(-1)
+    noac_df = pd.DataFrame({
+            'narration': 'no action',
+            'start_frame': df.stop_frame.shift(fill_value=0)[~overlaps].values,
+            'stop_frame': df.start_frame[~overlaps].values,
+    }, index=df.index[~overlaps] - 0.5)
+    return pd.concat([df, noac_df]).sort_index().reset_index(drop=True)
+
+def gt_plot(Z, frames, ann_file, video_id):
+    import numpy as np
+    import pandas as pd
+    import matplotlib.pyplot as plt
+    df = pd.read_csv(ann_file)
+    df = df[df['video_id']==video_id]
+    df = df[['narration','start_frame','stop_frame']].sort_values('start_frame')
+    gt = ['no action']+[(df[(i >= df.start_frame) & (i < df.stop_frame)].narration.tolist() or ['no action'])[-1] for i in frames]
+    actions, action_order, action_ix = np.unique(gt, return_index=True, return_inverse=True)
+    actions = actions[np.argsort(action_order)]
+    action_ix = np.argsort(np.argsort(action_order))[action_ix]
+
+
+    action_ix = action_ix[1:]
+    print(actions)
+
+    import torch
+    from ptgprocess.egovlp import EgoVLP, similarity
+
+    model = EgoVLP()
+    Z_text = model.encode_text(list(actions))
+    y = similarity(Z_text, torch.Tensor(Z).cuda()).cpu().numpy()
+    print(y.shape)
+    print(df.shape, action_ix.shape)
+
+    plt.figure(figsize=(12, 6))
+    plt.imshow(y.T, aspect='auto', origin='lower')
+    
+    plt.plot(action_ix, c='r')
+    plt.yticks(range(len(actions)), actions)
+    plt.savefig(f'{video_id}_emissions.png')
+
+
+
 if __name__ == '__main__':
     import fire
-    fire.Fire(run)
+    fire.Fire()
