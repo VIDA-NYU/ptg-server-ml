@@ -59,6 +59,7 @@ class ReasoningApp:
 
             entities = self.state_manager.get_entities()
             if entities is not None:
+                logger.info(f'Sending entities for all steps: {str(entities)}')
                 await ws_push.send_data([orjson.dumps(entities)], re_entities_sid)
 
             while True:
@@ -71,6 +72,7 @@ class ReasoningApp:
 
                         entities = self.state_manager.get_entities()
                         if entities is not None:
+                            logger.info(f'Sending entities for all steps: {str(entities)}')
                             await ws_push.send_data([orjson.dumps(entities)], re_entities_sid)
 
                         continue
