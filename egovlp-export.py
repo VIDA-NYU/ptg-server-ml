@@ -5,14 +5,17 @@ import h5py
 import cv2
 import torch
 
-def run(src, data_dir='.', out_dir='.', n_frames=16, fps=30, overwrite=False, **kw):
+def run(src, data_dir='.', out_dir='.', n_frames=16, fps=30, overwrite=False, ann_dir=None, **kw):
     out_file = get_out_file(src, data_dir, out_dir)
     dset_name = f'egovlp-n={n_frames}-fps={fps}'
+    video_id = os.path.splitext(os.path.basename(src))[0]
     print(out_file, dset_name)
 
     if not overwrite and os.path.isfile(out_file):
         with h5py.File(out_file, 'a') as hf:
             if dset_name in hf:
+                if ann_dir:
+                    vis(out_file, ann_dir, video_id, name=dset_name)
                 return
 
     from ptgprocess.egovlp import EgoVLP
@@ -48,6 +51,9 @@ def run(src, data_dir='.', out_dir='.', n_frames=16, fps=30, overwrite=False, **
         hf.create_dataset(dset_name, data=data)
     print('saved', out_file, dset_name, len(data))
 
+    if ann_dir:
+        vis(out_file, ann_dir, video_id, name=dset_name)
+
 def get_out_file(f, data_dir, out_dir):
     return os.path.join(out_dir, os.path.relpath(os.path.splitext(f)[0]+'.h5', data_dir))
 
@@ -58,7 +64,7 @@ def get_out_file(f, data_dir, out_dir):
 # visualization
 
 
-def vis(h5file, ann_file, video_id, name=None):
+def vis(h5file, ann_dir, video_id, name=None):
     with h5py.File(h5file, 'r') as hf:
         if name is None:
             print('pick one of:')
@@ -68,7 +74,7 @@ def vis(h5file, ann_file, video_id, name=None):
         print(d.dtype)
         Z = d['Z']
         frames = d['frame']
-    gt_plot(Z, frames, ann_file, video_id)
+    gt_plot(Z, frames, ann_dir, video_id, name)
 
 def get_action_df(df):
     import pandas as pd
@@ -81,14 +87,22 @@ def get_action_df(df):
     }, index=df.index[~overlaps] - 0.5)
     return pd.concat([df, noac_df]).sort_index().reset_index(drop=True)
 
-def gt_plot(Z, frames, ann_file, video_id):
+def gt_plot(Z, frames, ann_dir, video_id, name, out_dir='emissions', offset=8):
     import numpy as np
     import pandas as pd
     import matplotlib.pyplot as plt
-    df = pd.read_csv(ann_file)
+    
+    df = pd.concat([
+        pd.read_csv(os.path.join(ann_dir, 'EPIC_100_validation.csv')).assign(split='val'),
+        pd.read_csv(os.path.join(ann_dir, 'EPIC_100_train.csv')).assign(split='train'),
+    ])
     df = df[df['video_id']==video_id]
+    split = ','.join(df.split.unique())
     df = df[['narration','start_frame','stop_frame']].sort_values('start_frame')
-    gt = ['no action']+[(df[(i >= df.start_frame) & (i < df.stop_frame)].narration.tolist() or ['no action'])[-1] for i in frames]
+    gt = ['no action'] + [
+        (df[(i >= df.start_frame) & (i < df.stop_frame)].narration.tolist() or ['no action'])[-1] 
+        for i in np.asarray(frames) - offset
+    ]
     actions, action_order, action_ix = np.unique(gt, return_index=True, return_inverse=True)
     actions = actions[np.argsort(action_order)]
     action_ix = np.argsort(np.argsort(action_order))[action_ix]
@@ -106,12 +120,16 @@ def gt_plot(Z, frames, ann_file, video_id):
     print(y.shape)
     print(df.shape, action_ix.shape)
 
-    plt.figure(figsize=(12, 6))
+    plt.figure(figsize=(12, 6), dpi=300)
     plt.imshow(y.T, aspect='auto', origin='lower')
     
-    plt.plot(action_ix, c='r')
+    plt.plot(action_ix, c='r', ls=':')
+    #plt.plot(np.argmax(y, axis=-1), c='y', ls=':')
     plt.yticks(range(len(actions)), actions)
-    plt.savefig(f'{video_id}_emissions.png')
+
+    out_dir = os.path.join(out_dir, split)
+    os.makedirs(out_dir, exist_ok=True)
+    plt.savefig(os.path.join(out_dir, f'{video_id}_{name}_emissions.png'))
 
 
 
