@@ -62,6 +62,9 @@ class ReasoningApp:
                 logger.info(f'Sending entities for all steps: {str(entities)}')
                 await ws_push.send_data([orjson.dumps(entities)], re_entities_sid)
 
+            detected_actions = None
+            detected_objects = None
+
             while True:
                 for sid, timestamp, data in await ws_pull.recv_data():
                     if sid == RECIPE_SID:  # A call to start a new recipe
@@ -69,21 +72,16 @@ class ReasoningApp:
                         first_step = self.start_recipe(recipe_id)
                         if first_step is not None:
                             await ws_push.send_data([orjson.dumps(first_step)], re_check_status_sid)
-
                         entities = self.state_manager.get_entities()
                         if entities is not None:
                             logger.info(f'Sending entities for all steps: {str(entities)}')
                             await ws_push.send_data([orjson.dumps(entities)], re_entities_sid)
-
                         continue
+
                     elif sid == SESSION_SID:  # A call to start a new session
-                        self.state_manager.reset()
+                        #self.state_manager.reset()
                         continue
 
-                    elif sid == objects_sid:  # A call sending objects and bounding boxes
-                        #objects = orjson.loads(data)
-                        #print('>>>>>>>>> objects', objects)
-                        continue
                     elif sid == UPDATE_STEP_SID:  # A call to update the step
                         step_index = int(data)
                         updated_step = self.state_manager.set_user_feedback(step_index)
@@ -91,13 +89,23 @@ class ReasoningApp:
                             await ws_push.send_data([orjson.dumps(updated_step)], re_check_status_sid)
                         continue
 
-                    action_predictions = orjson.loads(data)
-                    top_actions = sorted(action_predictions.items(), key=lambda x: x[1], reverse=True)[:top]
-                    logger.info(f'Perception outputs: {str(top_actions)}')
-                    recipe_status = self.state_manager.check_status(top_actions)
-                    logger.info(f'Reasoning outputs: {str(recipe_status)}')
-                    if recipe_status is not None:
-                        await ws_push.send_data([orjson.dumps(recipe_status)], re_check_status_sid)
+                    elif sid == objects_sid:  # A call sending detected objects and bounding boxes
+                        detected_objects = orjson.loads(data)
+                        logger.info(f'Perception objects: {str(detected_objects)}')
+
+                    elif sid == actions_sid:  # A call sending detected actions
+                        detected_actions = orjson.loads(data)
+                        detected_actions = sorted(detected_actions.items(), key=lambda x: x[1], reverse=True)[:top]
+                        logger.info(f'Perception actions: {str(detected_actions)}')
+
+                    if detected_objects is not None and detected_actions is not None:
+                        recipe_status = self.state_manager.check_status(detected_actions, detected_objects)
+                        logger.info(f'Reasoning outputs: {str(recipe_status)}')
+                        if recipe_status is not None:
+                            await ws_push.send_data([orjson.dumps(recipe_status)], re_check_status_sid)
+                            # Reset the values of the detected inputs
+                            detected_actions = None
+                            detected_objects = None
 
     @ptgctl.util.async2sync
     async def run(self, *args, **kwargs):
