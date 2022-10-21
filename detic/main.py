@@ -69,7 +69,7 @@ class DeticApp:
                         # watch for recipe changes
                         if sid == recipe_sid:
                             await writer.write(b'[]', b'[]')
-                            self.change_recipe(x)
+                            self.change_recipe(buffer.decode('utf-8'))
                             continue
                         
                         # compute box
