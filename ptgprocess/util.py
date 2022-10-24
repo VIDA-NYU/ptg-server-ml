@@ -428,7 +428,7 @@ def draw_boxes(im, boxes, labels, color=(0,255,0), size=1):
         xy = list(map(int, xy))
         im = cv2.rectangle(im, xy[:2], xy[2:4], tuple(c.tolist()), 2)
         if label:
-            im = cv2.putText(im, label, xy[:2], cv2.FONT_HERSHEY_SIMPLEX, im.shape[1]/1200*size, (0, 0, 255), 2)
+            im = cv2.putText(im, label, xy[:2], cv2.FONT_HERSHEY_SIMPLEX, im.shape[1]/1200*size, (0, 0, 255), 1)
     return im
 
 
