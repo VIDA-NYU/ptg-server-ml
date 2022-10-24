@@ -15,7 +15,8 @@ from detectron2.utils.visualizer import Visualizer, random_color, ColorMode
 from detectron2.data import MetadataCatalog
 
 # Detic libraries
-detic_path = os.getenv('DETIC_PATH') or 'Detic'
+# detic_path = os.getenv('DETIC_PATH') or 'Detic'
+detic_path = os.path.join(os.path.dirname(__file__), 'Detic')
 sys.path.insert(0,  detic_path)
 sys.path.insert(0, os.path.join(detic_path, 'third_party/CenterNet2'))
 from detic.config import add_detic_config
@@ -214,112 +215,33 @@ class ZeroShotClassifier2(ZeroShotClassifier):
 
 
 
-def chunks(iterable,size):
-    it = iter(iterable)
-    chunk = tuple(itertools.islice(it,size))
-    while chunk:
-        yield chunk
-        chunk = tuple(itertools.islice(it,size))
-
-
-import itertools
-
-class VideoFramesLoader:
-    def __init__(self, root_dir, batch_size=64, ext='*'):
-        self.root = root_dir
-        self.ext = ext
-
-    def __iter__(self):
-        fs = glob.iglob(os.path.join(self.root, f'*.{self.ext}'))
-        for chunk in chunks(fs):
-            ims = []
-
-
-
-
-def video_batch_compute(vid_dir):
-    # 
-
-    # load vocab
-
-    model = Detic()
-
-    fs = glob.glob(os.path.join(self.root, f'*.{self.ext}'))
-
-    for fs_batch, im_batch in VideoFramesLoader(vid_dir):
-        fs_batch = model(im_batch)
-
-
-
-
-
-
-def run(src, vocab, max_cosine_distance=0.2, nn_budget=None, 
-        out_file=None, fps=10, show=None):
+def run(src, vocab=None, ann_root=None, include=None, exclude=None, out_file=None, fps=10, show=None, **kw):
     """Run multi-target tracker on a particular sequence.
-    
-    Arguments:
-        min_confidence (float): Detection confidence threshold. Disregard all detections that have a confidence lower than this value.
-        nms_max_overlap (float): Maximum detection overlap (non-maxima suppression threshold).
-        min_height (int): Detection height threshold. Disregard all detections that have a height lower than this value.
-        max_cosine_distance (float): Gating threshold for cosine distance metric (object appearance).
-        nn_budget (int): Maximum size of the appearance descriptor gallery. If None, no budget is enforced.
     """
-    # from deep_sort import nn_matching
-    # from deep_sort.detection import Detection
-    # from deep_sort.tracker import Tracker
-    from ptgprocess.util import ImageOutput, video_feed, draw_boxes
+    from ptgprocess.util import VideoInput, VideoOutput, video_feed, draw_boxes, get_vocab
 
-    # tracker = Tracker(nn_matching.NearestNeighborDistanceMetric("cosine", max_cosine_distance, nn_budget))
-
-    model = Detic()
+    model = Detic(**kw)
 
     if out_file is True:
-        out_file='tracked_'+os.path.basename(src)
+        out_file='detic_'+os.path.basename(src)
 
-    assert vocab, 'you must set vocab'
+    if vocab is not None and not (isinstance(vocab, str) and vocab in BUILDIN_METADATA_PATH):
+        vocab = get_vocab(vocab, ann_root, include, exclude)
+        assert vocab, 'you must set vocab'
     model.set_vocab(vocab)
 
-    with ImageOutput(out_file, fps, show=show) as imout:
-        for i, im in video_feed(src, fps):
-            # X_im,  im = image_loader(im)
+    with VideoInput(src, fps) as vin, \
+         VideoOutput(out_file, fps, show=show) as imout:
+        for i, im in vin:
             outputs = model(im)
 
-            xywh = outputs["instances"].pred_boxes.tensor
+            xywh = outputs["instances"].pred_boxes.tensor.cpu().numpy()
+            cls_ids = outputs["instances"].pred_classes.cpu().numpy()
             scores = outputs["instances"].scores
             # valid = scores >= min_confidence
-            # xywh = xywh[valid]
-            # scores = scores[valid]
-            print(xywh.__dict__)
-            print(xywh.shape)
+            #xywh[:,[2,3]] -= xywh[:,[0,1]]
 
-            # xywh = xywh.clone()
-            xywh[:,[2,3]] -= xywh[:,[0,1]]
-            # xywh = xywh[(xywh[:,3] >= min_height)]
-            # feature = None
-            print(xywh)
-
-            # # Update tracker.
-            # tracker.predict()
-            # tracker.update([
-            #     Detection(xywh, scores, )
-            #     for xywh in xywh
-            # ])
-
-            # tracks = [
-            #     track for track in tracker.tracks 
-            #     if not track.is_confirmed() or track.time_since_update > 0
-            # ]
-
-            labels = [
-                model.metadata.thing_classes[x] 
-                for x in outputs["instances"].pred_classes.cpu().tolist()
-            ]
-            imout.output(draw_boxes(im, xywh, labels))
-            # imout.output(draw_boxes(
-            #     im, 
-            #     [d.to_tlwh() for d in tracks], 
-            #     [d.track_id for d in tracks]))
+            imout.output(draw_boxes(im, xywh, model.labels[cls_ids]))
 
 
 if __name__ == '__main__':

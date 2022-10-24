@@ -1,6 +1,7 @@
 import setuptools
 
 IMAGE_DEPS = ['Pillow', 'opencv-python']
+ML_DEPS = ['torch', 'torchvision']
 deps = {
     'image': IMAGE_DEPS,
     'audio': ['sounddevice', 'soundfile'],
@@ -11,7 +12,9 @@ deps = {
     ],
     'yolo': IMAGE_DEPS+['torch'],
     'omnivore': ['hydra-core', 'einops', 'iopath', 'timm'],
-    'egovlp': ['transformers'],
+    'egovlp': ['transformers', 'av', 'decord', 'ffmpeg', 'humanize', 'psutil', 'transformers', 'timm', 'einops'],
+    'detic': ML_DEPS+['detection2 @ git+https://github.com/facebookresearch/detectron2.git#egg=detection2', ],
+    'egohos': ML_DEPS+['mmcv-full==1.6.0', 'mmsegmentation @ git+https://github.com/owenzlz/EgoHOS.git#egg=mmsegmentation&subdirectory=mmsegmentation'],
 }
 
 setuptools.setup(
@@ -27,13 +30,15 @@ setuptools.setup(
     # entry_points={'console_scripts': ['ptgprocess=ptgprocess:main']},
     install_requires=[
         'numpy', 'orjson', 'tqdm',
+        'Pillow', 'opencv-python',
         #'ptgctl @ git+ssh://git@github.com/VIDA-NYU/ptgctl@main#egg=ptgctl', 
     ],
     extras_require={
         'test': ['pytest', 'pytest-cov'],
         'doc': ['sphinx-rtd-theme'],
         **deps,
-        'all': {vi for v in deps.values() for vi in v},
+        'all': [vi for v in deps.values() for vi in v],
+        'current': [vi for k in ['image', 'egovlp', 'detic', 'egohos'] for vi in deps[k]],
     },
     license='MIT License',
     keywords='ptg machine learning processing recording server local data streams')

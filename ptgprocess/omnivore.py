@@ -43,24 +43,26 @@ class Omnivore(nn.Module):
         self.mean = [0.485, 0.456, 0.406]
         self.std = [0.229, 0.224, 0.225]
 
-    def add_image(self, im):
+    def prepare_image(self, im):
         # 1,C,H,W
         im = torch.as_tensor(im.transpose(2, 0, 1)[None], device=self.device)
         im = FV.normalize(short_side_scale(im/255, 224), self.mean, self.std)
         # im_crops = [uniform_crop(im, 224, i)[0] for i in [0,1,2]]
-        self.q.append(im[0])
+        return im[0]
+
+    def add_image(self, im):
+        self.q.append(self.prepare_image(im))
 
     def predict_recent(self):
         # T,C,H,W
-        ims = itertools.islice(itertools.cycle(self.q), self.n_frames)
-        ims = torch.stack(list(ims), dim=1)
-        return self._predict(ims[None], 'video')
+        ims = torch.stack(list(itertools.islice(itertools.cycle(self.q), self.n_frames)), dim=1)
+        return self.predict(ims[None], 'video')
 
     def forward(self, im):
         self.add_image(im)
         return self.predict_recent()
 
-    def _predict(self, input, input_type):
+    def predict(self, input, input_type='video'):
         # The model expects inputs of shape: B x C x T x H x W
         with torch.no_grad():
             return self.model(input.to(self.device), input_type=input_type)
@@ -105,7 +107,7 @@ def run(src, n_frames=30, out_file=None, fps=10, stride=1, show=None):
             model.add_image(im)
             if not i % stride:
                 y_pred = model.predict_recent()
-                topk, y_top = model.top_k(y_pred)
+                topk, y_top = model.topk(y_pred)
                 tqdm.tqdm.write(f'top: {topk}')
             imout.output(draw_text_list(im, topk)[0])
 

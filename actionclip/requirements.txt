@@ -1,0 +1,6 @@
+matplotlib
+opencv-python
+orjson
+tqdm
+
+git+https://github.com/openai/CLIP.git@main#egg=clip

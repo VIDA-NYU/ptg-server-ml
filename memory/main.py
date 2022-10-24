@@ -2,8 +2,6 @@
 Author Jianzhe Lin
 May.2, 2020
 """
-import cv2
-import matplotlib.pyplot as plt
 import os
 import re_id
 import orjson
@@ -12,13 +10,14 @@ import numpy as np
 import ptgctl
 import ptgctl.holoframe
 import ptgctl.util
-from collections import defaultdict
 
 
 logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(name)s:%(message)s')
 logger = logging.getLogger(__name__)
 
 #ptgctl.log.setLevel('WARNING')
+
+RECIPE_SID = 'event:recipe:id'
 
 class MemoryApp:
     def __init__(self):
@@ -32,18 +31,18 @@ class MemoryApp:
         input_sid = f'{prefix}detic:world'
         output_sid = f'{prefix}detic:memory'
 
-        async with self.api.data_pull_connect(input_sid) as ws_pull, \
+        async with self.api.data_pull_connect([input_sid, RECIPE_SID]) as ws_pull, \
                    self.api.data_push_connect(output_sid, batch=True) as ws_push:
             while True:
                 for sid, timestamp, data in await ws_pull.recv_data():
+                    # clear the memory when a new streaming is started
+                    if sid == RECIPE_SID:
+                        self.re_id = re_id.ReId()
+                        continue
+                    
                     objects = orjson.loads(data)
-
-                    for obj in objects:
-                        label, seen_before = self.re_id.update_memory(np.asarray(obj['xyz_center']), obj['label'])
-                        obj['track_id'] = label
-                        obj['seen_before'] = seen_before
-
-                    await ws_push.send_data([orjson.dumps(objects)])
+                    self.re_id.update_frame(objects)
+                    await ws_push.send_data([orjson.dumps(self.re_id.dump_memory(), option = orjson.OPT_SERIALIZE_NUMPY)])
 
 
 if __name__ == '__main__':

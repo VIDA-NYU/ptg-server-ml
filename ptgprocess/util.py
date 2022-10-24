@@ -1,6 +1,7 @@
 from __future__ import annotations
 # import heartrate; heartrate.trace(browser=True)
 import functools
+import itertools
 from typing import AsyncIterator, cast
 import os
 import time
@@ -355,6 +356,42 @@ def get_video_info(src):
     return fps, total
 
 
+def get_vocab(vocab, ann_root, include=None, exclude=None, splitby=None, builtin=None):
+    def _get(vocab):
+        if vocab is None:
+            return vocab  # someone elses problem lol
+        if isinstance(vocab, (list, tuple, set)):
+            return vocab  # literal
+        if builtin and vocab in builtin:
+            return vocab  # builtin
+        if ':' in vocab:
+            kind, vocab, key = vocab.split(':', 2)
+            kind = kind.lower()
+            if kind == 'recipe':
+                import ptgctl
+                api = ptgctl.API()
+                recipe = api.recipes.get(vocab)
+                return [w for k in key.split(',') for w in recipe[k]]
+            if kind.startswith('ek'):
+                import pandas as pd
+                df = pd.concat([
+                    pd.read_csv(os.path.join(ann_root, "EPIC_100_train_normalized.csv")).assign(split='train'),
+                    pd.read_csv(os.path.join(ann_root, "EPIC_100_validation_normalized.csv")).assign(split='val'),
+                ])
+                df = df[df.video_id == vocab] if vocab != 'all' else df
+                return df[key].unique().tolist()
+        raise ValueError("Invalid vocab")
+
+    vocab =  _get(vocab)
+    if splitby:
+        vocab = [x.strip() for x in vocab for x in x.split(splitby)]
+    if exclude:
+        vocab = [x for x in vocab if x not in exclude]
+    if include:
+        vocab = list(vocab)+list(include)
+
+    return list(set(vocab))
+
 
 def maybe_profile(func, min_time=20):
     @functools.wraps(func)
@@ -387,12 +424,15 @@ async def call_multiple_async(primary_task, *tasks):
 
 
 
-def draw_boxes(im, boxes, labels):
-    for xy, label in zip(boxes, labels if labels is not None else ['']*len(boxes)):
+def draw_boxes(im, boxes, labels, color=(0,255,0), size=1):
+    color = np.asarray(color).astype(int)
+    color = color[None] if color.ndim == 1 else color
+    labels = labels if labels is not None else ['']*len(boxes)
+    for xy, label, c in zip(boxes, itertools.cycle(labels), itertools.cycle(color)):
         xy = list(map(int, xy))
-        im = cv2.rectangle(im, xy[:2], xy[2:4], (0,255,0), 2)
+        im = cv2.rectangle(im, xy[:2], xy[2:4], tuple(c.tolist()), 2)
         if label:
-            im = cv2.putText(im, label, xy[:2], cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+            im = cv2.putText(im, label, xy[:2], cv2.FONT_HERSHEY_SIMPLEX, im.shape[1]/1200*size, (0, 0, 255), 2)
     return im
 
 
@@ -404,3 +444,11 @@ def draw_text_list(img, texts, i=-1, tl=(10, 50), scale=0.4, space=50, color=(25
             cv2.FONT_HERSHEY_COMPLEX, 
             scale, color, thickness)
     return img, i
+
+def draw_gt_text_list(im, pred_labels, texts, i_trues, i_topkmax):
+    _, i = draw_text_list(im, [texts[i] for i in i_trues if i in i_topkmax[:1]], color=(0,255,0))
+    _, i = draw_text_list(im, [texts[i] for i in i_trues if i in i_topkmax[1:]], i, color=(255,255,0))
+    _, i = draw_text_list(im, [texts[i] for i in i_trues if i not in i_topkmax], i, color=(0,0,255))
+    _, i = draw_text_list(im, pred_labels, i)
+    return im
+

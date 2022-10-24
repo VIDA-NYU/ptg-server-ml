@@ -2,37 +2,70 @@
 Author Jianzhe Lin
 May.2, 2020
 """
-from collections import defaultdict
+from dataclasses import dataclass
+from collections import Counter
 import numpy as np
 import cv2
 import matplotlib.pyplot as plt
-
+from ptgctl import pt3d
+    
+@dataclass
+class MemoryItem:
+    xyz_center: np.ndarray
+    label: str
+    track_id: str
+    seen_before: bool = False
+    
 
 class ReId:
-    MIN_DEPTH_POINT_DISTANCE = 7
-
     def __init__(self) -> None:
-        self.location_memory = {}
-        self.instance_count = defaultdict(lambda: 0)
-
-    def update_memory(self, xyz, label):
+        self.memory = {}
+        self.unseen_count = {}
+        self.instance_count = Counter()
+        
+    def update_frame(self, objects):
+        # get all objects whose seen_before = False
+        unseens = set(self.unseen_count.keys())
+        
+        # update objects
+        for obj in objects:
+            if obj['confidence'] < 0.5 or obj['depth_map_dist'] == pt3d.INVALID_DEPTH:
+                continue
+            track_id = self.update_object(obj)
+            # remove it from unseens if we see the track_id
+            unseens.discard(track_id)
+        
+        # update unseen frame count and change seen_before to True if unseen_count becomes 0
+        for track_id in unseens:
+            self.unseen_count[track_id] -= 1
+            if self.unseen_count[track_id] == 0:
+                self.memory[track_id].seen_before = True
+                del self.unseen_count[track_id]
+        
+    def update_object(self, obj):
+        xyz_center = np.asarray(obj['xyz_center'])
+        label = obj['label']
         # check memory
-        for k, xyz_seen in self.location_memory.items():
-            if label == k.rsplit('_', 1)[0] and self.memory_comparison(xyz_seen, xyz):
-                return k, True
+        for item in self.memory.values():
+            if label == item.track_id.rsplit('_', 1)[0] and self.memory_comparison(xyz_center, item.xyz_center):
+                return item.track_id
         
         # unique name for multiple instances
         self.instance_count[label] += 1
         i = self.instance_count[label]
-        label = f'{label}_{i}'
+        track_id = f'{label}_{i}'
         
-        # TODO: add other info
-        self.location_memory[label] = xyz
-        return label, False
+        # add new item to memory
+        self.memory[track_id] = MemoryItem(xyz_center = xyz_center, label = label, track_id = track_id)
+        self.unseen_count[track_id] = 10 # change seen_before to True if unseen for 10 frames
+        return track_id
 
     def memory_comparison(self, seen, candidate):
         '''Compare a new instance to a previous one. Determine if they match.'''
-        return np.linalg.norm(candidate - seen) < 100
+        return np.linalg.norm(candidate - seen) < 0.2
+    
+    def dump_memory(self):
+        return list(self.memory.values())
 
 
 class DrawResults:
