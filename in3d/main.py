@@ -37,12 +37,12 @@ class dicque(OrderedDict):
         k = min(self, key=lambda t: abs(tms-t), default=None)
         return k
 
+MAX_TIME_DIFF_BETWEEN_MAIN_AND_DEPTH = 300
 
 class In3DApp:
     def __init__(self):
         self.api = ptgctl.API(username=os.getenv('API_USER') or 'pointcloud',
                               password=os.getenv('API_PASS') or 'pointcloud')
-        self.compute_sids = {'depthlt'}
         self.max_depth_dist = 7
 
     def get_pts3d(self, main, depthlt, depthltCal):
@@ -51,6 +51,13 @@ class In3DApp:
             depthlt['rig2world'], depthltCal['rig2cam'], main['cam2world'],
             [main['focalX'], main['focalY']], [main['principalX'], main['principalY']],
             generate_point_cloud=True)
+    
+    def get_detic3d(self, detic, depthlt, depthltCal):
+        return pt3d.Points3D(
+            detic['shape'][:2], depthlt['image'], depthltCal['lut'],
+            depthlt['rig2world'], depthltCal['rig2cam'], detic['cam2world'],
+            detic['focal'], detic['principal'],
+            generate_point_cloud=False)
 
     @ptgctl.util.async2sync
     async def run(self, prefix=None):
@@ -62,11 +69,12 @@ class In3DApp:
         hist = dicque(maxlen=20)
 
         in_sids = ['main', 'depthlt', 'depthltCal']
-        obj_sids = ['detic:image']
+        obj_sid = 'detic:image:for3d'
         out_sids = ['pointcloud', 'detic:world']
+        skipped_labels = {'person'}
 
         pbar = tqdm.tqdm()
-        async with self.api.data_pull_connect(in_sids + obj_sids, ack=True) as ws_pull, \
+        async with self.api.data_pull_connect(in_sids + [obj_sid], ack=True) as ws_pull, \
                    self.api.data_push_connect(out_sids, batch=True) as ws_push:
             with logging_redirect_tqdm():
             
@@ -77,16 +85,17 @@ class In3DApp:
                         tms = int(t.split('-')[0])
 
                         # project detic
-                        if sid == 'detic:image':
+                        if sid == obj_sid:
                             k = hist.closest(tms)
-                            if k is None:
+                            if k is None or abs(k-tms) > MAX_TIME_DIFF_BETWEEN_MAIN_AND_DEPTH:
                                 log.debug('no pt3d for detic t=%d', tms)
                                 continue
                             log.debug('using detic t=%d, im=%d dt=%d', tms, k, tms-k)
                             
                             d = orjson.loads(buffer)
-                            pt3d = hist[k]
-                            h,w = pt3d.im_shape[:2]
+                            pt3d = self.get_detic3d(d["image_params"], hist[k], data['depthltCal'])
+                            d = d["objects"]
+                            h,w = pt3d.im_shape
                             
                             xyxy = np.array([o['xyxyn'] for o in d]).reshape(-1, 4)
                             xyxy[:, 0] *= w 
@@ -101,6 +110,7 @@ class In3DApp:
                                 obj['xyz_center'] = xyz_center
                                 obj['depth_map_dist'] = dist
                             
+                            d = list(filter(lambda x: x['label'] not in skipped_labels, d))
                             await ws_push.send_data([jsondump(d)], ['detic:world'], [t])
                             continue
 
@@ -109,32 +119,34 @@ class In3DApp:
                         d['_tms'] = tms
                         d['_t'] = t
                         
-                        if sid not in self.compute_sids:
+                        if sid != 'depthlt':
                             continue
     
                         # get pt3d
                         try:
                             main, depthlt, depthltCal = [data[k] for k in in_sids]
+                            mts = main['_tms']
+                            dts = depthlt['_tms']
+                            if abs(mts-dts) > MAX_TIME_DIFF_BETWEEN_MAIN_AND_DEPTH:
+                                continue
                             pts3d = self.get_pts3d(main, depthlt, depthltCal)
                         except KeyError as e:
                             print(e)
                             await asyncio.sleep(0.1)
                             continue
 
-                        mts = main['_tms']
-                        dts = depthlt['_tms']
 
                         log.debug('created pt3d main=%d depth=%d dt=%d', mts, dts, dts-mts)
                         
                         # save for later
-                        hist[main['_tms']] = pts3d
+                        hist[depthlt['_tms']] = depthlt
 
                         # write point cloud
                         dts = depthlt['_t']
                         await ws_push.send_data([
                             jsondump({
                                 'time': dts,
-                                'color': (pts3d.rgb * 255).astype('uint8'),
+                                'color': pts3d.rgb,
                                 'xyz_world': pts3d.xyz_depth_world,
                             }),
                         ], ['pointcloud'], [dts])
