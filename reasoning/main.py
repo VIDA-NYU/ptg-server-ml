@@ -4,21 +4,25 @@ import asyncio
 import logging
 import ptgctl
 import ptgctl.util
+from os.path import join
 from tim_reasoning import StateManager
 
 logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(name)s:%(message)s')
 logger = logging.getLogger(__name__)
 #ptgctl.log.setLevel('WARNING')
 
-configs = {'rule_classifier_path': '/src/app/models/recipe_tagger',
-           'bert_classifier_path': '/src/app/models/bert_classifier'}
-
 RECIPE_SID = 'event:recipe:id'
 SESSION_SID = 'event:session:id'
 UPDATE_STEP_SID = 'event:recipe:step'
+ACTIONS_CLIP_SID = 'clip:action:steps'
+ACTIONS_EGOVLP_SID = 'egovlp:action:steps'
+OBJECTS_SID = 'detic:image'
+REASONING_STATUS_SID = 'reasoning:check_status'
+REASONING_ENTITIES_SID = 'reasoning:entities'
 
-import nltk
-nltk.download('punkt')
+
+CONFIGS = {'tagger_model_path': join(os.environ['REASONING_MODELS_PATH'], 'recipe_tagger'),
+           'bert_classifier_path': join(os.environ['REASONING_MODELS_PATH'], 'bert_classifier')}
 
 
 class ReasoningApp:
@@ -27,30 +31,39 @@ class ReasoningApp:
         self.api = ptgctl.API(username=os.getenv('API_USER') or 'reasoning',
                               password=os.getenv('API_PASS') or 'reasoning')
 
-        self.state_manager = StateManager(configs)
+        self.state_manager = StateManager(CONFIGS)
 
     def start_recipe(self, recipe_id):
-        logger.info('Starting recipe, ID=%s...' % str(recipe_id))
+        logger.info(f'Starting recipe, ID={str(recipe_id)}')
         if recipe_id is not None:
             recipe = self.api.recipes.get(recipe_id)
-            logger.info('Loaded recipe: %s' % str(recipe))
+            logger.info(f'Loaded recipe: {str(recipe)}')
             step_data = self.state_manager.start_recipe(recipe)
-            logger.info('First step: %s' % str(step_data))
+            logger.info(f'First step: {str(step_data)}')
 
             return step_data
 
-    async def run_reasoning(self, prefix='', top=5, use_clip=True):
-        perception_actions_sid = f'{prefix}clip:action:steps' if use_clip else f'{prefix}egovlp:action:steps'
-        perception_objects_sid = f'{prefix}detic:image'
-        output_sid = f'{prefix}reasoning'
+    async def run_reasoning(self, prefix='', top=5, use_egovlp=True):
+        actions_sid = prefix + ACTIONS_EGOVLP_SID if use_egovlp else prefix + ACTIONS_CLIP_SID
+        objects_sid = prefix + OBJECTS_SID
+        re_check_status_sid = prefix + REASONING_STATUS_SID
+        re_entities_sid = prefix + REASONING_ENTITIES_SID
 
-        async with self.api.data_pull_connect([perception_actions_sid, perception_objects_sid, RECIPE_SID, SESSION_SID, UPDATE_STEP_SID], ack=True) as ws_pull, \
-                   self.api.data_push_connect([output_sid], batch=True) as ws_push:
+        async with self.api.data_pull_connect([actions_sid, objects_sid, RECIPE_SID, SESSION_SID, UPDATE_STEP_SID], ack=True) as ws_pull, \
+                   self.api.data_push_connect([re_check_status_sid, re_entities_sid], batch=True) as ws_push:
 
-            recipe_id = self.api.sessions.current_recipe()
+            recipe_id = self.api.session.current_recipe()
             first_step = self.start_recipe(recipe_id)
             if first_step is not None:
-                await ws_push.send_data([orjson.dumps(first_step)])
+                await ws_push.send_data([orjson.dumps(first_step)], re_check_status_sid)
+
+            entities = self.state_manager.get_entities()
+            if entities is not None:
+                logger.info(f'Sending entities for all steps: {str(entities)}')
+                await ws_push.send_data([orjson.dumps(entities)], re_entities_sid)
+
+            detected_actions = None
+            detected_objects = None
 
             while True:
                 for sid, timestamp, data in await ws_pull.recv_data():
@@ -58,30 +71,41 @@ class ReasoningApp:
                         recipe_id = data.decode('utf-8')
                         first_step = self.start_recipe(recipe_id)
                         if first_step is not None:
-                            await ws_push.send_data([orjson.dumps(first_step)])
-                        continue
-                    elif sid == SESSION_SID:  # A call to start a new session
-                        self.state_manager.reset()
+                            await ws_push.send_data([orjson.dumps(first_step)], re_check_status_sid)
+                        entities = self.state_manager.get_entities()
+                        if entities is not None:
+                            logger.info(f'Sending entities for all steps: {str(entities)}')
+                            await ws_push.send_data([orjson.dumps(entities)], re_entities_sid)
                         continue
 
-                    elif sid == perception_objects_sid:  # A call sending objects and bounding boxes
-                        #objects = orjson.loads(data)
-                        #print('>>>>>>>>> objects', objects)
+                    elif sid == SESSION_SID:  # A call to start a new session
+                        #self.state_manager.reset()
                         continue
+
                     elif sid == UPDATE_STEP_SID:  # A call to update the step
                         step_index = int(data)
                         updated_step = self.state_manager.set_user_feedback(step_index)
                         if updated_step is not None:
-                            await ws_push.send_data([orjson.dumps(updated_step)])
+                            await ws_push.send_data([orjson.dumps(updated_step)], re_check_status_sid)
                         continue
 
-                    action_predictions = orjson.loads(data)
-                    top_actions = sorted(action_predictions.items(), key=lambda x: x[1], reverse=True)[:top]
-                    logger.info('Perception outputs: %s' % str(top_actions))
-                    recipe_status = self.state_manager.check_status(top_actions)
-                    logger.info('Reasoning outputs: %s' % str(recipe_status))
-                    if recipe_status is not None:
-                        await ws_push.send_data([orjson.dumps(recipe_status)])
+                    elif sid == objects_sid:  # A call sending detected objects and bounding boxes
+                        detected_objects = orjson.loads(data)
+                        logger.info(f'Perception objects: {str(detected_objects)}')
+
+                    elif sid == actions_sid:  # A call sending detected actions
+                        detected_actions = orjson.loads(data)
+                        detected_actions = sorted(detected_actions.items(), key=lambda x: x[1], reverse=True)[:top]
+                        logger.info(f'Perception actions: {str(detected_actions)}')
+
+                    if detected_objects is not None and detected_actions is not None:
+                        recipe_status = self.state_manager.check_status(detected_actions, detected_objects)
+                        logger.info(f'Reasoning outputs: {str(recipe_status)}')
+                        if recipe_status is not None:
+                            await ws_push.send_data([orjson.dumps(recipe_status)], re_check_status_sid)
+                            # Reset the values of the detected inputs
+                            detected_actions = None
+                            detected_objects = None
 
     @ptgctl.util.async2sync
     async def run(self, *args, **kwargs):
@@ -97,4 +121,3 @@ class ReasoningApp:
 if __name__ == '__main__':
     import fire
     fire.Fire(ReasoningApp)
-

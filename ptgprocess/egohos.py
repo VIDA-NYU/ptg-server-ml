@@ -11,19 +11,13 @@ from PIL import Image, ImageOps
 #detic_path = os.getenv('DETIC_PATH') or 'Detic'
 #sys.path.insert(0,  detic_path)
 
-from mmseg.apis import inference_segmentor, init_segmentor
+from mmseg.apis import init_segmentor
 from mmcv.parallel import collate, scatter
 from mmseg.datasets.pipelines import Compose
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 MODEL_DIR = os.path.join(os.getenv("MODEL_DIR") or 'models', 'egohos')
-CFG_FILE = os.path.join(MODEL_DIR, 'upernet_swin_base_patch4_window12_512x512_160k_egohos_handobj2_pretrain_480x360_22K/upernet_swin_base_patch4_window12_512x512_160k_egohos_handobj2_pretrain_480x360_22K.py')
-CHECKPOINT = os.path.join(MODEL_DIR, 'upernet_swin_base_patch4_window12_512x512_160k_egohos_handobj2_pretrain_480x360_22K/best_mIoU_iter_42000.pth')
-
-
-
-
 
 class BaseEgoHos(nn.Module):
     def __init__(self, config, checkpoint=None, device=device):
@@ -38,21 +32,29 @@ class BaseEgoHos(nn.Module):
             checkpoint = max(glob.glob(os.path.join(os.path.dirname(config), '*.pth')))
         
         #print('using device:', device)
+        if device == 'cpu':
+            import mmcv
+            config = mmcv.Config.fromfile(config)
+            config["norm_cfg"]["type"] = "BN"
+            config["model"]["backbone"]["norm_cfg"]["type"] = "BN"
+            config["model"]["decode_head"]["norm_cfg"]["type"] = "BN"
+            config["model"]["auxiliary_head"]["norm_cfg"]["type"] = "BN"
         self.model = init_segmentor(config, checkpoint, device=device)
         self.preprocess = Compose(self.model.cfg.data.test.pipeline[1:])
 
         self.device = device
-        self.is_cuda = next(self.model.parameters()).is_cuda
+        self.is_cuda = device != 'cpu'
         self.palette = get_palette(None, self.model.CLASSES)
         self.classes = self.model.CLASSES
         self.addt_model=None
 
-    def forward(self, img):
+    def forward(self, img, addt=None, include_addt=True):
         data = {'img': img, 'img_shape': img.shape, 'ori_shape': img.shape, 'filename': '__.png', 'ori_filename': '__.png'}
         data = self.preprocess(data)
         
         # add additional segmentation maps
-        addt = self.addt_model(img) if self.addt_model is not None else None
+        if addt is None and self.addt_model is not None:
+            addt = self.addt_model(img)
         if addt is not None:
             data['img'] = [
                     torch.cat([im] + [self.pad_resize(x, im) for x in xs[::-1]], dim=0)
@@ -72,7 +74,7 @@ class BaseEgoHos(nn.Module):
             result = self.model(return_loss=False, rescale=True, **data)
         
         result = [x[None] for x in result]
-        if addt is not None:
+        if include_addt and addt is not None:
             result = [np.concatenate([x]+list(xs)) for x, *xs in zip(result, addt)]
         return result
 
@@ -92,31 +94,58 @@ class BaseEgoHos(nn.Module):
 
 
 class EgoHosHands(BaseEgoHos):
+    output_names = ('hands',)
     def __init__(self, config='seg_twohands_ccda', **kw):
         super().__init__(config, **kw)
 
 class EgoHosCB(BaseEgoHos):
-    def __init__(self, config='twohands_to_cb_ccda', **kw):
+    output_names = ('cb', 'hands')
+    def __init__(self, config='twohands_to_cb_ccda', addt=True, **kw):
         super().__init__(config, **kw)
-        self.addt_model = EgoHosHands()
+        self.addt_model = EgoHosHands() if addt else None
 
 class EgoHosObj1(BaseEgoHos):
-    def __init__(self, config='twohands_cb_to_obj1_ccda', **kw):
+    output_names = ('obj1', 'cb', 'hands')
+    def __init__(self, config='twohands_cb_to_obj1_ccda', addt=True, **kw):
         super().__init__(config, **kw)
-        self.addt_model = EgoHosCB()
+        self.addt_model = EgoHosCB() if addt else None
 
 class EgoHosObj2(BaseEgoHos):
-    def __init__(self, config='twohands_cb_to_obj2_ccda', **kw):
+    output_names = ('obj2', 'cb', 'hands')
+    def __init__(self, config='twohands_cb_to_obj2_ccda', addt=True, **kw):
         super().__init__(config, **kw)
+        self.addt_model = EgoHosCB() if addt else None
+
+class EgoHosObjs(nn.Module):
+    output_names = ('obj1', 'obj2', 'cb', 'hands')
+    def __init__(self):
+        super().__init__()
         self.addt_model = EgoHosCB()
+        self.obj1_model = EgoHosObj1(addt=False)
+        self.obj2_model = EgoHosObj2(addt=False)
+        self.classes = self.obj2_model.classes
+
+    def forward(self, im, addt=None):
+        if addt is None:
+            addt = self.addt_model(im)
+        obj1 = self.obj1_model(im, addt, include_addt=False)
+        obj2 = self.obj1_model(im, addt, include_addt=False)
+        return [np.concatenate(xs) for xs in zip(obj1, obj2, addt)]
 
 
-MODELS = {'hands': EgoHosHands, 'obj1': EgoHosObj1, 'obj2': EgoHosObj2, 'cb': EgoHosCB}
+MODELS = {'hands': EgoHosHands, 'obj1': EgoHosObj1, 'obj2': EgoHosObj2, 'objs': EgoHosObjs, 'cb': EgoHosCB}
 
-class EgoHos(nn.Module):
-    def __new__(self, mode='obj2', *a, **kw):
+class EgoHos(BaseEgoHos):
+    def __new__(cls, mode='obj1', *a, **kw):
         return MODELS[mode](*a, **kw)
   
+
+def merge_segs(segs):
+    out = np.zeros_like(segs[0])
+    for s in segs:
+        where = s != 0
+        out[where] = s[where]
+    return out
 
 
 def get_palette(palette, classes):

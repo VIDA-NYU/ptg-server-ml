@@ -1,0 +1,9 @@
+[submodule "ptgprocess/EgoVLP"]
+	path = ptgprocess/EgoVLP
+	url = https://github.com/beasteers/EgoVLP.git
+[submodule "ptgprocess/Detic"]
+	path = ptgprocess/Detic
+	url = https://github.com/facebookresearch/Detic.git
+[submodule "ptgprocess/EgoHOS"]
+	path = ptgprocess/EgoHOS
+	url = https://github.com/owenzlz/EgoHOS

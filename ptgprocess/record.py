@@ -1,5 +1,7 @@
 from __future__ import annotations
 import os
+import glob
+import tqdm
 import orjson
 import numpy as np
 from .util import Context
@@ -11,33 +13,67 @@ class BaseWriter(Context):
     def context(self, sample, t_start): yield self
     def write(self, data, t): raise NotImplementedError
 
+MB = 1024 * 1024
 
 class RawWriter(BaseWriter):
     raw=True
-    def __init__(self, name, store_dir='', **kw):
+    def __init__(self, name, store_dir='', max_len=1000, max_size=9.5*MB, **kw):
         super().__init__(**kw)
-        self.fname = os.path.join(store_dir, f'{name}.zip')
+        #self.fname = os.path.join(store_dir, f'{name}.zip')
+        self.dir = os.path.join(store_dir, name)
+        os.makedirs(self.dir, exist_ok=True)
+        self.name = name
+        self.max_len = max_len
+        self.max_size = max_size
 
     def context(self, sample=None, t_start=None):
+        try:
+            self.size = 0
+            self.buffer = []
+            with tqdm.tqdm(total=self.max_len, desc=self.name) as self.pbar:
+                yield self
+        finally:
+            if self.buffer:
+                self._dump(self.buffer)
+                self.buffer.clear()
+
+    def _dump(self, data):
+        if not data:
+            return
         import zipfile
-        print("Opening zip file:", self.fname)
-        with zipfile.ZipFile(self.fname, 'a', zipfile.ZIP_STORED, False) as self.writer:
-            yield self
+        fname = os.path.join(self.dir, f'{data[0][1]}_{data[-1][1]}.zip')
+        tqdm.tqdm.write(f"writing {fname}")
+        with zipfile.ZipFile(fname, 'a', zipfile.ZIP_STORED, False) as zf:
+            for d, ts in data:
+                zf.writestr(ts, d)
 
     def write(self, data, ts):
-        self.writer.writestr(ts, data)
+        self.pbar.update()
+        self.size += len(data)
+        self.buffer.append([data, ts])
+        if len(self.buffer) >= self.max_len or self.size >= self.max_size:
+            self._dump(self.buffer)
+            self.buffer.clear()
+            self.pbar.reset()
+            self.size = 0
 
 
 class VideoWriter(BaseWriter):
-    def __init__(self, name, store_dir, sample, t_start, fps=15, vcodec='libx264', crf='23',  **kw):
+    def __init__(self, name, store_dir, sample, t_start, fps=15, vcodec='libx264', crf='23', scale=None, norm=None, max_duplicate_secs=10,  **kw):
         super().__init__(**kw)
-        fname = os.path.join(store_dir, f'{name}.mp4')
+        self.fname = fname = os.path.join(store_dir, f'{name}.mp4')
+
+        if name == 'depthlt':
+            scale = 40 if scale is None else scale
+        self.scale = scale
+        self.norm = norm
         
         self.prev_im = self.dump(sample['image'])
         self.t_start = t_start
         h, w = sample['image'].shape[:2]
 
         self.fps = fps
+        self.max_duplicate = max_duplicate_secs * fps
         self.cmd = (
             f'ffmpeg -y -s {w}x{h} -pixel_format bgr24 -f rawvideo -r {fps} '
             f'-i pipe: -vcodec {vcodec} -pix_fmt yuv420p -crf {crf} {fname}')
@@ -48,7 +84,8 @@ class VideoWriter(BaseWriter):
             shlex.split(self.cmd), 
             stdin=subprocess.PIPE, 
             stdout=subprocess.PIPE, 
-            stderr=sys.stderr)
+            #stderr=sys.stderr
+        )
         self.writer = process.stdin
 
         self.t = 0
@@ -65,9 +102,19 @@ class VideoWriter(BaseWriter):
             if process.stdin:
                 process.stdin.close()
             process.wait()
-            print('finished')
+            print('finished', self.fname)
 
     def dump(self, im):
+        if self.scale:
+            im = (im * self.scale).astype(im.dtype)
+        if self.norm:
+            im = im / im.max()
+
+        # convert int32 to uint8
+        if not np.issubdtype(im.dtype, np.uint8):
+            if np.issubdtype(im.dtype, np.integer):
+                im = im.astype(float) / np.iinfo(im.dtype).max
+            im = (im * 255).astype(np.uint8)
         if im.ndim == 2:
             im = np.broadcast_to(im[:,:,None], im.shape+(3,))
         return im[:,:,::-1].tobytes()
@@ -75,9 +122,14 @@ class VideoWriter(BaseWriter):
     def write(self, data, ts=None):
         im = self.dump(data['image'])
         if ts is not None:
+            #i = 0
             while self.t < ts - self.t_start:
                 self.writer.write(self.prev_im)
                 self.t += 1.0 / self.fps
+                #i += 1
+                #if i > self.max_duplicate:
+                #    self.t = ts
+                #    break
             self.prev_im = im
         self.writer.write(im)
         self.t += 1.0 / self.fps
@@ -122,6 +174,7 @@ class JsonWriter(BaseWriter):
                 yield self
             finally:
                 self.fh.write(b'\n]\n')
+                print('closing json', self.fname, flush=True)
 
     def write(self, d, ts=None):
         if self.i:
@@ -161,6 +214,7 @@ class CsvWriter(BaseWriter):
 
 
 class RawReader:
+    reader = None
     def __init__(self, src):
         if os.path.isdir(src):
             fs = sorted(glob.glob(os.path.join(src, '*')))
@@ -178,8 +232,11 @@ class RawReader:
         import zipfile
         for f in self.fs:
             with zipfile.ZipFile(f, 'r', zipfile.ZIP_STORED, False) as self.reader:
-                for ts in sorted(self.reader.namelist()):
-                    with zf.open(ts, 'r') as f:
+                fs = sorted(self.reader.namelist())
+                pbar = tqdm.tqdm(fs)
+                for ts in pbar:
+                    pbar.set_description(f'{ts}')
+                    with self.reader.open(ts, 'r') as f:
                         yield ts, f.read()
             self.reader = None
 

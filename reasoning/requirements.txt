@@ -1,2 +1,2 @@
-tim-reasoning @ git+https://github.com/VIDA-NYU/tim-reasoning.git@devel
+tim-reasoning @ git+https://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@github.com/VIDA-NYU/tim-reasoning.git@dd70b686252815aae2a294cfd50762e1409a5a19
 orjson

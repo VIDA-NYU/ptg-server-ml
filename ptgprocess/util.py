@@ -55,7 +55,7 @@ class Context:
 
 
 class StreamReader(Context):
-    def __init__(self, api, streams, unprefixed_streams=None, recording_id=None, prefix=None, raw=False, raw_ts=False, progress=True, merged=False, **kw):
+    def __init__(self, api, streams, unprefixed_streams=None, recording_id=None, prefix=None, raw=False, raw_ts=False, progress=True, merged=False, load_errors='ignore', **kw):
         super().__init__(streams=streams, unprefixed_streams=unprefixed_streams, **kw)
         self.api = api
         self.recording_id = recording_id
@@ -64,6 +64,7 @@ class StreamReader(Context):
         self.raw_ts = raw_ts
         self.merged = merged
         self.progress = progress
+        self.load_errors = load_errors
 
     async def acontext(self, streams, unprefixed_streams=None, fullspeed=None, last=None, ack=False, replay_pull_timeout=5000, **kw) -> 'AsyncIterator[StreamReader]':
         self.replayer = self._replay_task = None
@@ -116,12 +117,15 @@ class StreamReader(Context):
                 for sid, t, x in data:
                     tp = parse_epoch_time(t)
                     pbar.set_description(f'{sid} {time.time() - tp:.2f}s old' +(f' - {tp-tlast:.3f}s since last' if tlast else ''))
-                    yield (
-                        (sid, t, x) if self.raw else 
-                        (sid, t, holoframe.load(x)) if self.raw_ts else
-                        (sid, tp, holoframe.load(x)))
-                    pbar.update()
-                    tlast = tp
+                    try:
+                        yield (
+                            (sid, t, x) if self.raw else 
+                            (sid, t, holoframe.load(x)) if self.raw_ts else
+                            (sid, tp, holoframe.load(x)))
+                        pbar.update()
+                        tlast = tp
+                    except Exception as e:
+                        print("Error loading", sid, t, e.__class__.__name__, e)
 
 
 class StreamWriter(Context):
