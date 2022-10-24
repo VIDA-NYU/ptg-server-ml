@@ -13,24 +13,49 @@ class BaseWriter(Context):
     def context(self, sample, t_start): yield self
     def write(self, data, t): raise NotImplementedError
 
+MB = 1024 * 1024
 
 class RawWriter(BaseWriter):
     raw=True
-    def __init__(self, name, store_dir='', **kw):
+    def __init__(self, name, store_dir='', max_len=1000, max_size=9.5*MB, **kw):
         super().__init__(**kw)
-        self.fname = os.path.join(store_dir, f'{name}.zip')
+        #self.fname = os.path.join(store_dir, f'{name}.zip')
+        self.dir = os.path.join(store_dir, name)
+        os.makedirs(self.dir, exist_ok=True)
+        self.name = name
+        self.max_len = max_len
+        self.max_size = max_size
 
     def context(self, sample=None, t_start=None):
-        import zipfile
-        print("Opening zip file:", self.fname)
         try:
-            with zipfile.ZipFile(self.fname, 'a', zipfile.ZIP_STORED, False) as self.writer:
+            self.size = 0
+            self.buffer = []
+            with tqdm.tqdm(total=self.max_len, desc=self.name) as self.pbar:
                 yield self
         finally:
-            print('closing', self.fname)
+            if self.buffer:
+                self._dump(self.buffer)
+                self.buffer.clear()
+
+    def _dump(self, data):
+        if not data:
+            return
+        import zipfile
+        fname = os.path.join(self.dir, f'{data[0][1]}_{data[-1][1]}.zip')
+        tqdm.tqdm.write(f"writing {fname}")
+        with zipfile.ZipFile(fname, 'a', zipfile.ZIP_STORED, False) as zf:
+            for d, ts in data:
+                zf.writestr(ts, d)
 
     def write(self, data, ts):
-        self.writer.writestr(ts, data)
+        self.pbar.update()
+        self.size += len(data)
+        self.buffer.append([data, ts])
+        if len(self.buffer) >= self.max_len or self.size >= self.max_size:
+            self._dump(self.buffer)
+            self.buffer.clear()
+            self.pbar.reset()
+            self.size = 0
 
 
 class VideoWriter(BaseWriter):
@@ -59,7 +84,8 @@ class VideoWriter(BaseWriter):
             shlex.split(self.cmd), 
             stdin=subprocess.PIPE, 
             stdout=subprocess.PIPE, 
-            stderr=sys.stderr)
+            #stderr=sys.stderr
+        )
         self.writer = process.stdin
 
         self.t = 0

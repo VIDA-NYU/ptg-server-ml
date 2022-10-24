@@ -67,6 +67,9 @@ class BaseRecorder(Processor):
         return streams
 
     async def _call_async(self, recording_id=None, streams=None, replay=None, fullspeed=None, progress=True, store_dir=None, write_errors='ignore', **kw):
+        from ptgctl.util import parse_epoch_time
+        from ptgctl import holoframe
+
         store_dir = os.path.join(store_dir or self.STORE_DIR, recording_id or self.new_recording_id())
         os.makedirs(store_dir, exist_ok=True)
 
@@ -79,14 +82,21 @@ class BaseRecorder(Processor):
         reader = StreamReader(
                     self.api, streams+[self.RECORDING_SID], recording_id=replay,
                     progress=progress, fullspeed=fullspeed, alternate_reader=None,
-                    ack=False, onebyone=True, latest=False, raw=raw, raw_ts=raw_ts)
+                    ack=False, onebyone=True, latest=False, raw=True, raw_ts=True)
 
         writers = {}
         with contextlib.ExitStack() as stack:
             async with reader:
                 async for sid, t, x in reader:
                     if sid == self.RECORDING_SID:
+                        print('\n'*3, "stopping recording", recording_id, x, '\n------------', flush=True)
                         break
+
+
+                    if not (raw or raw_ts):        
+                        t = parse_epoch_time(t)
+                    if not raw:
+                        x = holoframe.load(x)
 
                     if sid not in writers:
                         writers[sid] = stack.enter_context(
