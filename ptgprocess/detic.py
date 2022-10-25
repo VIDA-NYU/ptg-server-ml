@@ -44,7 +44,7 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 DEFAULT_PROMPT = 'a {}'
 
 class Detic(nn.Module):
-    def __init__(self, vocab=None, conf_threshold=0.3, masks=False, patch_for_embeddings=True, prompt=DEFAULT_PROMPT, device=device):
+    def __init__(self, vocab=None, conf_threshold=0.3, masks=False, one_class_per_proposal=True, patch_for_embeddings=True, prompt=DEFAULT_PROMPT, device=device):
         super().__init__()
         cfg = get_cfg()
         add_centernet_config(cfg)
@@ -53,7 +53,7 @@ class Detic(nn.Module):
         cfg.MODEL.WEIGHTS = 'https://dl.fbaipublicfiles.com/detic/Detic_LCOCOI21k_CLIP_SwinB_896b32_4x_ft4x_max-size.pth'
         cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.5  # set threshold for this model
         cfg.MODEL.ROI_BOX_HEAD.ZEROSHOT_WEIGHT_PATH = 'rand'
-        cfg.MODEL.ROI_HEADS.ONE_CLASS_PER_PROPOSAL = True # For better visualization purpose. Set to False for all classes.
+        cfg.MODEL.ROI_HEADS.ONE_CLASS_PER_PROPOSAL = one_class_per_proposal # For better visualization purpose. Set to False for all classes.
         cfg.MODEL.MASK_ON = masks
         #if not torch.cuda.is_available():
         cfg.MODEL.DEVICE=device # uncomment this to use cpu-only mode
@@ -84,11 +84,15 @@ class Detic(nn.Module):
                 metadata.thing_colors = [tuple(random_color(rgb=True, maximum=1)) for _ in metadata.thing_classes]
             except (AttributeError, AssertionError):
                 pass
-
+            
             self.prompt = prompt = prompt or '{}'
-            self.text_features = classifier = self.text_encoder(
-                [prompt.format(x) for x in vocab]
-            ).detach().permute(1, 0).contiguous().cpu()
+            if isinstance(vocab, (np.ndarray, torch.Tensor)):
+                classifier = torch.as_tensor(vocab).cpu()
+            else:
+                classifier = self.text_encoder(
+                    [prompt.format(x) for x in vocab]
+                ).detach().permute(1, 0).contiguous().cpu()
+            self.text_features = classifier
         else:
             vocab = vocab or 'lvis'
             self.vocab_key = BUILDIN_METADATA_PATH[vocab]
