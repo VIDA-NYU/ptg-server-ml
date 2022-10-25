@@ -302,6 +302,47 @@ class VideoInput:
             yield t if self.give_time else i, im
 
 
+class FrameInput:
+    def __init__(self, src, src_fps, fps, file_pattern='frame_{:010d}.png', give_time=True, fallback_previous=True):
+        if os.path.isdir(src):
+            src = os.path.join(src, file_pattern)
+        self.src = src
+        self.fps = fps or src_fps
+        self.src_fps = src_fps
+        self.give_time = give_time
+        self.fallback_previous = fallback_previous
+
+    def fname2i(self, f):
+        return int(os.path.splitext(os.path.basename(f))[0].split('_')[-1])
+
+    @staticmethod
+    def cvt_fps(src_fps, fps):
+        return int(max(round(src_fps / (fps or src_fps)), 1))
+
+    def __enter__(self): return self
+    def __exit__(self, *a): pass
+    def __iter__(self):
+        import cv2
+        fs = os.listdir(os.path.dirname(self.src))
+        i_max = self.fname2i(max(fs))
+        every = self.cvt_fps(self.src_fps, self.fps)
+        print(f'{self.src}: fps {self.src_fps} to {self.fps}. taking every {every} frames')
+
+        im = None
+        for i in tqdm.tqdm(range(0, i_max+1, every)):
+            t = i / self.src_fps if self.give_time else i
+
+            f = self.src.format(i)
+            if not os.path.isfile(f):
+                tqdm.tqdm.write(f'missing frame: {f}')
+                if self.fallback_previous and im is not None:
+                    yield t, im
+                continue
+
+            im = cv2.imread(f)
+            yield t, im
+
+
 
 def video_feed(src: str|int=0, fps=None, give_time=True, bad_frames_count=True, include_bad_frame=False):
     cap = cv2.VideoCapture(src)
@@ -420,15 +461,18 @@ async def call_multiple_async(primary_task, *tasks):
 
 
 
-def draw_boxes(im, boxes, labels, color=(0,255,0), size=1):
+def draw_boxes(im, boxes, labels=None, color=(0,255,0), size=1, text_color=(0, 0, 255), spacing=3):
+    boxes = np.asarray(boxes).astype(int)
     color = np.asarray(color).astype(int)
     color = color[None] if color.ndim == 1 else color
-    labels = labels if labels is not None else ['']*len(boxes)
-    for xy, label, c in zip(boxes, itertools.cycle(labels), itertools.cycle(color)):
-        xy = list(map(int, xy))
+    labels = itertools.chain([] if labels is None else labels, itertools.cycle(['']))
+    for xy, label, c in zip(boxes, labels, itertools.cycle(color)):
         im = cv2.rectangle(im, xy[:2], xy[2:4], tuple(c.tolist()), 2)
         if label:
-            im = cv2.putText(im, label, xy[:2], cv2.FONT_HERSHEY_SIMPLEX, im.shape[1]/1200*size, (0, 0, 255), 2)
+            if isinstance(label, list):
+                im, _ = draw_text_list(im, label, 0, tl=xy[:2] + spacing, space=40, color=text_color)
+            else:
+                im = cv2.putText(im, label, xy[:2] - spacing, cv2.FONT_HERSHEY_SIMPLEX, im.shape[1]/1400*size, text_color, 1)
     return im
 
 
