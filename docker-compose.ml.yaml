@@ -2,8 +2,6 @@ version: '3'
 
 services:
 
-  # 
-  
   detic:
     image: detic
     build:
@@ -67,17 +65,6 @@ services:
     devices:
      - /dev/nvidia0:/dev/nvidia0
   
-  # omnivore:
-  #   image: ptgprocess
-  #   build: .
-  #   container_name: omnivore
-  #   volumes:
-  #     - ${VOLUMES}/models/torchhub:/root/.cache/torch/hub/checkpoints
-  #   restart: unless-stopped
-  #   command: -m ptgprocess.processors.omnivore run --continuous
-  #   devices:
-  #    - /dev/nvidia0:/dev/nvidia0
-
   reasoning:
     build: ./reasoning
     container_name: reasoning
@@ -87,13 +74,13 @@ services:
     devices:
      - /dev/nvidia0:/dev/nvidia0
 
-  # memory:
-  #   build: ./memory
-  #   container_name: memory
-  #   restart: unless-stopped
+  memory:
+    build: ./memory
+    container_name: memory
+    restart: unless-stopped
 
-  # in3d:
-  #   build: ./in3d
-  #   container_name: in3d
-  #   restart: unless-stopped
+  in3d:
+    build: ./in3d
+    container_name: in3d
+    restart: unless-stopped
 

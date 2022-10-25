@@ -25,7 +25,8 @@ DEFAULT_VOCAB = 'lvis'
 
 class DeticApp:
     image_box_keys = ['xyxyn', 'confidence', 'class_id', 'label']
-    vocab_keys = ['tools_simple', 'ingredients_simple', 'objects']
+    #vocab_keys = ['tools_simple', 'ingredients_simple', 'objects']
+    vocab_keys = ['ingredient_objects', 'tool_objects']
 
     EXTRA_VOCAB = ['person', 'feet']
 
@@ -53,7 +54,7 @@ class DeticApp:
         mean_person_confs_decay = 0
         decay = 0.5
 
-        self.change_recipe(self.api.sessions.current_recipe())
+        self.change_recipe(self.api.session.current_recipe())
 
         pbar = tqdm.tqdm()
         async with self.api.data_pull_connect(in_sids + [recipe_sid], ack=True) as ws_pull, \
@@ -68,13 +69,15 @@ class DeticApp:
                         
                         # watch for recipe changes
                         if sid == recipe_sid:
-                            await writer.write(b'[]', b'[]')
-                            self.change_recipe(x)
+                            #await writer.write(b'[]', b'[]')
+                            await ws_push.send_data([b'[]']*3, out_sids)
+                            log.debug(buffer.decode('utf-8'))
+                            self.change_recipe(buffer.decode('utf-8'))
                             continue
                         
                         # compute box
                         main = holoframe.load(buffer)
-                        im = main['image']
+                        im = main['image'][:,:,::-1]
                         xyxy, confs, class_ids, labels = self.predict(im)
                         xyxyn = boxnorm(xyxy, *im.shape[:2])
 
@@ -83,6 +86,8 @@ class DeticApp:
                         person_confs = confs[is_person] if is_person.sum() else np.zeros((1,))
                         mean_person_confs = np.nanmean(person_confs)
                         mean_person_confs_decay = (1 - decay) * mean_person_confs + decay * mean_person_confs_decay
+
+                        labels = [self.vocab_map.get(l, l) for l in labels]
 
                         objs = self.zip_objs(
                             self.image_box_keys,
@@ -106,11 +111,24 @@ class DeticApp:
     def change_recipe(self, recipe_id):
         if not recipe_id:
             print('no recipe. using default vocab:', DEFAULT_VOCAB)
+            self.vocab_map = {}
             self.model.set_vocab(DEFAULT_VOCAB)
             return
         print('using recipe', recipe_id)
         recipe = self.api.recipes.get(recipe_id)
-        self.model.set_vocab([w for k in self.vocab_keys for w in recipe.get(k) or []] + self.EXTRA_VOCAB)
+        #self.model.set_vocab([w for k in self.vocab_keys for w in recipe.get(k) or []] + self.EXTRA_VOCAB)
+
+        self.vocab_map = {}
+        vocab = list(self.EXTRA_VOCAB)
+        for k in self.vocab_keys:
+            v = recipe.get(k) or []
+            if isinstance(v, list):
+                vocab.extend(v)
+            elif isinstance(v, dict):
+                vocab.extend(x for xs in v.values() for x in xs)
+                self.vocab_map.update({x: k for k, xs in v.items() for x in xs})
+
+        self.model.set_vocab(vocab)
 
     def predict(self, im):
         outputs = self.model(im)

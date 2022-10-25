@@ -10,6 +10,7 @@ import numpy as np
 import ptgctl
 import ptgctl.holoframe
 import ptgctl.util
+import sys
 
 
 logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(name)s:%(message)s')
@@ -38,6 +39,7 @@ class MemoryApp:
                     # clear the memory when a new streaming is started
                     if sid == RECIPE_SID:
                         self.re_id = re_id.ReId()
+                        print("memory cleared", file = sys.stderr)
                         continue
                     
                     objects = orjson.loads(data)

@@ -1,5 +1,7 @@
 from __future__ import annotations
 import os
+import glob
+import tqdm
 import asyncio
 import fnmatch
 import contextlib
@@ -8,8 +10,8 @@ import datetime
 import numpy as np
 
 from .core import Processor
-from ..util import StreamReader
-from ..record import BaseWriter, RawWriter, VideoWriter, AudioWriter, JsonWriter
+from ..util import StreamReader, Context
+from ..record import BaseWriter, RawWriter, VideoWriter, AudioWriter, JsonWriter, RawReader
 
 
 
@@ -44,59 +46,171 @@ class BaseRecorder(Processor):
                 if data != recording_id:
                     return data
 
-    async def _call_async(self, recording_id=None, streams=None, replay=None, fullspeed=None, progress=True, store_dir=None, **kw):
-        store_dir = os.path.join(store_dir or self.STORE_DIR, recording_id or self.new_recording_id())
-        os.makedirs(store_dir, exist_ok=True)
-
+    def select_streams(self, streams=None):
         if not streams:
             streams = self.api.streams.ls()
             if self.STREAMS:
                 streams = [
-                    s for s in self.api.streams.ls() 
+                    s for s in self.api.streams.ls()
                     if any(fnmatch.fnmatch(s, k) for k in self.STREAMS)
                 ]
         elif isinstance(streams, str):
             streams = streams.split('+')
+        return streams
+
+    def match_streams(self, streams):
+        if self.STREAMS:
+            streams = [
+                s for s in streams or []
+                if any(fnmatch.fnmatch(s, k) for k in self.STREAMS)
+            ]
+        return streams
+
+    async def _call_async(self, recording_id=None, streams=None, replay=None, fullspeed=None, progress=True, store_dir=None, write_errors='ignore', **kw):
+        from ptgctl.util import parse_epoch_time
+        from ptgctl import holoframe
+
+        store_dir = os.path.join(store_dir or self.STORE_DIR, recording_id or self.new_recording_id())
+        os.makedirs(store_dir, exist_ok=True)
+
+        streams = self.select_streams(streams)
 
         raw = getattr(self.Writer, 'raw', False)
         raw_ts = getattr(self.Writer, 'raw_ts', False)
 
+
+        reader = StreamReader(
+                    self.api, streams+[self.RECORDING_SID], recording_id=replay,
+                    progress=progress, fullspeed=fullspeed, alternate_reader=None,
+                    ack=False, onebyone=True, latest=False, raw=True, raw_ts=True)
+
         writers = {}
         with contextlib.ExitStack() as stack:
-            async with StreamReader(
-                    self.api, streams+[self.RECORDING_SID], recording_id=replay, 
-                    progress=progress, fullspeed=fullspeed, 
-                    ack=False, raw=raw, raw_ts=raw_ts) as reader:
+            async with reader:
                 async for sid, t, x in reader:
                     if sid == self.RECORDING_SID:
+                        print('\n'*3, "stopping recording", recording_id, x, '\n------------', flush=True)
                         break
+
+
+                    if not (raw or raw_ts):        
+                        t = parse_epoch_time(t)
+                    if not raw:
+                        x = holoframe.load(x)
 
                     if sid not in writers:
                         writers[sid] = stack.enter_context(
                             self.Writer(sid, store_dir, sample=x, t_start=t, **kw))
+                    
+                    try:
+                        writers[sid].write(x, t)
+                    except Exception as e:
+                        print("error writing", sid, t, e.__class__.__name__, e)
 
-                    writers[sid].write(x, t)
+
+    def run_missing(self, *rec_ids, raw_dir, streams=None, confirm=False, overwrite=False, **kw):
+        from ptgctl.util import parse_epoch_time
+        from ptgctl import holoframe
+        
+
+        assert os.path.abspath(raw_dir) != os.path.abspath(self.STORE_DIR), "um whatchu doin"
+        all_rec_ids = os.listdir(raw_dir)
+        rec_ids = rec_ids or '*'
+        rec_ids = [r  for  r in all_rec_ids if any(fnmatch.fnmatch(r, p) for p in rec_ids)]
+        for rec_id in rec_ids:
+            try:
+                print()
+                print(rec_id, '----------')
+                # get missing streams
+                src_dir = os.path.join(raw_dir, rec_id)
+                out_dir = os.path.join(self.STORE_DIR, rec_id)
+                if not os.path.isdir(src_dir):
+                    print("no recording named", rec_id)
+                os.makedirs(out_dir, exist_ok=True)
+                src_streams = {os.path.splitext(f)[0]: f for f in os.listdir(src_dir)}
+                out_streams = {os.path.splitext(f)[0] for f in os.listdir(out_dir)}
+                missing = set(src_streams)
+                if not overwrite:
+                    missing -= out_streams
+                if streams:
+                    missing = set(streams)&missing
+                streams = self.match_streams(list(missing))
+                print("found existing", out_streams)
+                print("found raw", src_streams)
+                print(rec_id, "missing", missing)
+                print("writer matched:", set(streams))
+                if not streams:
+                    print('nothing to do, moving on.')
+                    continue
+                if confirm:
+                    c=input('continue? [Y/c/n] ').lower()
+                    if 'c' in c:
+                        continue
+                    if 'n' in c:
+                        return
+
+                pbar = tqdm.tqdm(streams)
+                for sid in pbar:
+                    pbar.set_description(sid)
+                    with RawReader(os.path.join(src_dir, src_streams[sid])) as reader:
+                        raw = getattr(self.Writer, 'raw', False)
+                        raw_ts = getattr(self.Writer, 'raw_ts', False)
+
+                        it = iter(reader)
+                        xx = next(it, None)
+                        if xx is None:
+                            return
+                        t, x = xx
+                        if not (raw or raw_ts):
+                            t = parse_epoch_time(t)
+                        if not raw:
+                            x = holoframe.load(x)
+
+                        with self.Writer(sid, out_dir, sample=x, t_start=t, **kw) as writer:
+                            raw = getattr(writer, 'raw', False)
+                            raw_ts = getattr(writer, 'raw_ts', False)
+
+                            it = (x for xs in [[xx],it] for x in xs)
+                            for t, x in it:
+                                try:
+                                    if not (raw or raw_ts):
+                                        t = parse_epoch_time(t)
+                                    if not raw:
+                                        x = holoframe.load(x)
+                                    writer.write(x, t)
+                                except Exception as e:
+                                    print("error writing", sid, t, e.__class__.__name__, e)
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+
 
 
 class RawRecorder(BaseRecorder):
     Writer = RawWriter
-    
+    ext = '.zip'
 
 
 class VideoRecorder(BaseRecorder):
     Writer = VideoWriter
     STREAMS=['main', 'depthlt', 'gll', 'glf', 'grf', 'grr']
+    ext = '.mp4'
 
 class AudioRecorder(BaseRecorder):
     Writer = AudioWriter
     STREAMS = ['mic0']
-
+    ext = '.mp3'
 
 class JsonRecorder(BaseRecorder):
     Writer = JsonWriter
+    ext = '.json'
     STREAMS = [
         'hand', 'eye', 'imuaccel', 'imugyro', 'imumag', 'yolo*', 'clip*',
         'gllCal', 'glfCal', 'grfCal', 'grrCal', 'depthltCal', 'detic:*',
+        'reasoning*',
+        'egovlp*',
+        'pointcloud',
+        'event*',
     ]
 
 

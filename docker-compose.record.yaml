@@ -14,7 +14,7 @@ services:
     networks:
       - ptg
     volumes:
-      - ${VOLUMES}/recordings/raw:/src/recordings
+      - ${VOLUMES}/recordings/raw:/src/app/recordings
     command: -m ptgprocess.processors.record raw run --continuous
 
   video_recorder:
@@ -24,7 +24,8 @@ services:
     networks:
       - ptg
     volumes:
-      - ${VOLUMES}/recordings/post:/src/recordings
+      - ${VOLUMES}/recordings/post:/src/app/recordings
+      - ${VOLUMES}/recordings/raw:/src/app/raw
     command: -m ptgprocess.processors.record video run --continuous
 
   audio_recorder:
@@ -34,7 +35,8 @@ services:
     networks:
       - ptg
     volumes:
-      - ${VOLUMES}/recordings/post:/src/recordings
+      - ${VOLUMES}/recordings/post:/src/app/recordings
+      - ${VOLUMES}/recordings/raw:/src/app/raw
     command: -m ptgprocess.processors.record audio run --continuous
 
   json_recorder:
@@ -44,7 +46,8 @@ services:
     networks:
       - ptg
     volumes:
-      - ${VOLUMES}/recordings/post:/src/recordings
+      - ${VOLUMES}/recordings/post:/src/app/recordings
+      - ${VOLUMES}/recordings/raw:/src/app/raw
     command: -m ptgprocess.processors.record json run --continuous
 
 
