@@ -40,7 +40,7 @@ class EgoVLPApp:
     async def run(self, *a, **kw):
         while True:
             try:
-                recipe_id = self.api.sessions.current_recipe()
+                recipe_id = self.api.session.current_recipe()
                 while not recipe_id:
                     print("waiting for recipe to be activated")
                     recipe_id = await self._watch_recipe_id(recipe_id)
