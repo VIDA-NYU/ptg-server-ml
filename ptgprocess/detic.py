@@ -152,8 +152,8 @@ class DeticCascadeROIHeads2(DeticCascadeROIHeads):
         ]
         if self.mult_proposal_score:
             scores = [(s * ps[:, None]) ** 0.5 for s, ps in zip(scores, proposal_scores)]
-        #if self.one_class_per_proposal:
-        #    scores = [s * (s == s[:, :-1].max(dim=1)[0][:, None]).float() for s in scores]
+        if self.one_class_per_proposal:
+           scores = [s * (s == s[:, :-1].max(dim=1)[0][:, None]).float() for s in scores]
         predictor, predictions, proposals = head_outputs[-1]
         boxes = predictor.predict_boxes((predictions[0], predictions[1]), proposals)
         pred_instances, filt_idxs = fast_rcnn_inference(
