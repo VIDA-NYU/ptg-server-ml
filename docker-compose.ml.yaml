@@ -32,6 +32,7 @@ services:
     volumes:
       - ${VOLUMES}/models/cache:/root/.cache
       - ${VOLUMES}/models:/src/app/models
+      - ${VOLUMES}/fewshot:/src/app/fewshot
     environment:
       LOCAL_RANK: '0'
     restart: unless-stopped

@@ -11,3 +11,5 @@ psutil
 transformers
 timm
 einops
+scikit-learn
+xgboost
