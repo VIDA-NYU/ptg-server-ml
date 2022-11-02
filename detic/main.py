@@ -78,7 +78,7 @@ class DeticApp:
                         # compute box
                         main = holoframe.load(buffer)
                         im = main['image'][:,:,::-1]
-                        xyxy, confs, class_ids, labels = self.predict(im)
+                        xyxy, confs, class_ids, labels, box_confs = self.predict(im)
                         xyxyn = boxnorm(xyxy, *im.shape[:2])
 
                         # use person detection as a reasoning signal
@@ -91,7 +91,7 @@ class DeticApp:
 
                         objs = self.zip_objs(
                             self.image_box_keys,
-                            [xyxyn, confs, class_ids, labels])
+                            [xyxyn, confs, class_ids, labels, box_confs])
                         await ws_push.send_data([
                             jsondump(objs),
                             jsondump({'objects': objs, 'image_params': {
@@ -137,7 +137,9 @@ class DeticApp:
         class_ids = insts.pred_classes.numpy().astype(int)
         confs = insts.scores.numpy()
         labels = self.model.labels[class_ids]
-        return xyxy, confs, class_ids, labels
+        box_confs = insts.box_scores.numpy()
+
+        return xyxy, confs, class_ids, labels, box_confs
 
     def zip_objs(self, keys, xs):
         return [dict(zip(keys, xs)) for xs in zip(*xs)]

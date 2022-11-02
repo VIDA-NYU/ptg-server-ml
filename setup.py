@@ -2,18 +2,15 @@ import setuptools
 
 IMAGE_DEPS = ['Pillow', 'opencv-python']
 ML_DEPS = ['torch', 'torchvision']
+CLIP = 'clip @ git+https://github.com/openai/CLIP.git@main#egg=clip'
 deps = {
     'image': IMAGE_DEPS,
     'audio': ['sounddevice', 'soundfile'],
-    'clip': IMAGE_DEPS+[
-        'torch', 
-        #'clip @ git+ssh://git@github.com/openai/CLIP@main#egg=clip'
-        'clip @ git+https://github.com/openai/CLIP.git@main#egg=clip',
-    ],
+    'clip': IMAGE_DEPS+['torch', CLIP],
     'yolo': IMAGE_DEPS+['torch'],
     'omnivore': ['hydra-core', 'einops', 'iopath', 'timm'],
     'egovlp': ['transformers', 'av', 'decord', 'ffmpeg', 'humanize', 'psutil', 'transformers', 'timm', 'einops'],
-    'detic': ML_DEPS+['detection2 @ git+https://github.com/facebookresearch/detectron2.git#egg=detection2', ],
+    'detic': ML_DEPS+[CLIP, 'detectron2 @ git+https://github.com/facebookresearch/detectron2.git@main#egg=detectron2', ],
     'egohos': ML_DEPS+['mmcv-full==1.6.0', 'mmsegmentation @ git+https://github.com/owenzlz/EgoHOS.git#egg=mmsegmentation&subdirectory=mmsegmentation'],
 }
 

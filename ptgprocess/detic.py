@@ -153,7 +153,7 @@ class DeticCascadeROIHeads2(DeticCascadeROIHeads):
         if self.mult_proposal_score:
             scores = [(s * ps[:, None]) ** 0.5 for s, ps in zip(scores, proposal_scores)]
         if self.one_class_per_proposal:
-            scores = [s * (s == s[:, :-1].max(dim=1)[0][:, None]).float() for s in scores]
+           scores = [s * (s == s[:, :-1].max(dim=1)[0][:, None]).float() for s in scores]
         predictor, predictions, proposals = head_outputs[-1]
         boxes = predictor.predict_boxes((predictions[0], predictions[1]), proposals)
         pred_instances, filt_idxs = fast_rcnn_inference(
@@ -164,8 +164,9 @@ class DeticCascadeROIHeads2(DeticCascadeROIHeads):
             predictor.test_nms_thresh,
             predictor.test_topk_per_image,
         )
-        # ++ add clip features to instances [N boxes x 512]
+        # ++ add clip features and box scores to instances [N boxes x 512]
         pred_instances[0].clip_features = predictions[2][filt_idxs]
+        pred_instances[0].box_scores = proposal_scores[0][filt_idxs]
         return pred_instances
 
 
@@ -242,6 +243,7 @@ def run(src, vocab=None, ann_root=None, include=None, exclude=None, out_file=Non
             xywh = outputs["instances"].pred_boxes.tensor.cpu().numpy()
             cls_ids = outputs["instances"].pred_classes.cpu().numpy()
             scores = outputs["instances"].scores
+            box_scores = outputs["instances"].box_scores
             # valid = scores >= min_confidence
             #xywh[:,[2,3]] -= xywh[:,[0,1]]
 
