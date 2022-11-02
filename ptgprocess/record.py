@@ -240,4 +240,15 @@ class RawReader:
                         yield ts, f.read()
             self.reader = None
 
+    def describe(self):
+        from ptgctl.util import parse_epoch_time
+        t_last = None
+        for ts, d in self:
+            t = parse_epoch_time(ts)
+            tqdm.tqdm.write(f'{ts} {t - (t_last or t):.3f}s {len(d)}')
+            t_last = t
 
+
+if __name__ == '__main__':
+    import fire
+    fire.Fire()
