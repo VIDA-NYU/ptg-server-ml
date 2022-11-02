@@ -221,7 +221,7 @@ def run(src, vocab, include=None, exclude=None, out_file=None, n_frames=16, fps=
         emissions = np.asarray(emissions).T
         import matplotlib.pyplot as plt
         plt.figure(figsize=(15, 8), dpi=300)
-        plt.imshow(np.asarray(emissions).T, aspect='auto', cmap='magma', origin='lower', interpolation='nearest')
+        plt.imshow(np.asarray(emissions), aspect='auto', cmap='magma', origin='lower', interpolation='nearest')
         plt.yticks(range(len(vocab)), vocab)
         plt.colorbar()
         plt.savefig(os.path.splitext(out_file)[0]+'_emissions.png')
@@ -229,7 +229,7 @@ def run(src, vocab, include=None, exclude=None, out_file=None, n_frames=16, fps=
 
 
 
-def extract(src, out_dir, file_pattern='frame_{:010d}.png', fps=8, n_frames=16):
+def extract(src, out_dir, file_pattern='frame_{:010d}.png', fps=8, src_fps=30, n_frames=16):
     os.makedirs(out_dir, exist_ok=True)
     name = os.path.splitext(os.path.basename(src.strip(os.sep)))[0]
     name = f'{name}-n_frames={n_frames}-fps={fps}.npz'
@@ -243,7 +243,7 @@ def extract(src, out_dir, file_pattern='frame_{:010d}.png', fps=8, n_frames=16):
     
     frames = []
     Zs = []
-    with (FrameInput(os.path.join(src, file_pattern), 30, fps, give_time=False) if os.path.isdir(src) else VideoInput(src, fps, give_time=False)) as vin:
+    with (FrameInput(os.path.join(src, file_pattern), src_fps, fps, give_time=False) if os.path.isdir(src) else VideoInput(src, fps, give_time=False)) as vin:
         for i, (ii, im) in enumerate(vin):
             q.append(model.prepare_image(im))
             z_video = model.encode_video(torch.stack(list(q), dim=1).to(device))
