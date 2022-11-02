@@ -204,14 +204,17 @@ def run(src, n=1, fps=None, out_file=None, out_dir=None, show=None, overwrite=Fa
             print('exists already')
             continue
         
-        with (FrameInput(src, 30, fps, give_time=False) if os.path.isdir(src) else VideoInput(src, fps, give_time=False)) as vin, \
-             (FrameOutput(outf) if not outf.endswith('mp4') else VideoOutput(outf, fps, show=show)) as imout:
+        vin = FrameInput(src, 30, fps, give_time=False) if os.path.isdir(src) else VideoInput(src, fps, give_time=False)
+        vin.__enter__()
+        fps = fps or vin.dest_fps
+        vout = FrameOutput(outf) if not outf.endswith('mp4') else VideoOutput(outf, fps, show=show)
+        with vin, vout:
             aug = get_augmentation(None)
             with open(outf+'.npy', 'wb') as f:
                 pickle.dump(aug, f)
             for i, im in vin:
                 im2 = aug(im)[0].numpy()
-                imout.output(im2, i)
+                vout.output(im2, i)
  
 if __name__ == '__main__':
     import fire
