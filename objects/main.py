@@ -92,7 +92,7 @@ class ObjectsApp:
     def __init__(self, hand_decay=0.5, max_depth_time_diff=1, max_depth_dist=7, **kw):
         self.api = ptgctl.API(username=os.getenv('API_USER') or 'detic',
                               password=os.getenv('API_PASS') or 'detic')
-        self.model = Detic(device='cuda:0', **kw)
+        self.model = Detic(**kw)
         self.hand_decay = hand_decay
         self.max_depth_time_diff = max_depth_time_diff
         self.max_depth_dist = max_depth_dist
@@ -212,12 +212,13 @@ class ObjectsApp:
                                 obj['depth_map_dist'] = dist
 
                             # TODO: object tracking ... and add tracking info to 
-                            tracker.step([
+                            tracker.step(ds.iou_matching.nms([
                                 ds.Detection(
                                     ds.util.xywh2tlwh(100*np.r_[o['xyz_center'], [self.obj_size, self.obj_size, self.obj_size]]), 
                                     o['confidence'], features[i], meta=o)
                                 for i, o in enumerate(objs)
-                            ], tms/1000)
+                                if o['confidence'] > 0.5
+                            ], 0.9), tms/1000)
 
                             tracks = [
                                 t for t in tracker.tracks

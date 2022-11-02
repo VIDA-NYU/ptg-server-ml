@@ -9,9 +9,9 @@ ENV DIR=/src/lib/ptgprocess
 #    && rm -rf /var/lib/apt/lists/*
 
 #RUN pip install git+https://github.com/NVIDIA/PyProf.git && pip list | grep pyprof
-RUN git clone https://github.com/beasteers/EgoVLP.git # && ls && cd EgoVLP && pip install -r requirements.txt
+#RUN git clone https://github.com/beasteers/EgoVLP.git # && ls && cd EgoVLP && pip install -r requirements.txt
 
-ENV DETIC_PATH=/src/app/Detic
+#ENV DETIC_PATH=/src/app/Detic
 
 ADD setup.py README.md LICENSE $DIR/
 ADD ptgprocess/__init__.py $DIR/ptgprocess/

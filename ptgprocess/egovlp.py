@@ -135,28 +135,72 @@ def sim_matrix_mm(a, b):
     return torch.mm(a, b.transpose(0, 1))
 
 
-def run(src, vocab, include=None, exclude=None, out_file=None, n_frames=16, fps=10, stride=1, show=None, ann_root=None, **kw):
+class FrameInput:
+    def __init__(self, src, src_fps, fps, give_time=True, fallback_previous=True):
+        self.src = src
+        self.fps = fps or src_fps
+        self.src_fps = src_fps
+        self.give_time = give_time
+        self.fallback_previous = fallback_previous
+
+    def fname2i(self, f):
+        return int(os.path.splitext(os.path.basename(f))[0].split('_')[-1])
+
+    @staticmethod
+    def cvt_fps(src_fps, fps):
+        return int(max(round(src_fps / (fps or src_fps)), 1))
+
+    def __enter__(self): return self
+    def __exit__(self, *a): pass
+    def __iter__(self):
+        import cv2
+        fs = os.listdir(os.path.dirname(self.src))
+        i_max = self.fname2i(max(fs))
+        every = self.cvt_fps(self.src_fps, self.fps)
+        print(f'{self.src}: fps {self.src_fps} to {self.fps}. taking every {every} frames')
+
+        im = None
+        for i in tqdm.tqdm(range(0, i_max+1, every)):
+            t = i / self.src_fps if self.give_time else i
+
+            f = self.src.format(i)
+            if not os.path.isfile(f):
+                tqdm.tqdm.write(f'missing frame: {f}')
+                if self.fallback_previous and im is not None:
+                    yield t, im
+                continue
+
+            im = cv2.imread(f)
+            yield t, im
+
+
+
+def run(src, vocab, include=None, exclude=None, out_file=None, n_frames=16, fps=8, stride=1, show=None, ann_root=None, **kw):
     from ptgprocess.record import CsvWriter
     from ptgprocess.util import VideoInput, VideoOutput, draw_text_list, get_vocab
+
     model = EgoVLP(**kw)
 
     if out_file is True:
-        out_file='egovlp_'+os.path.basename(src)
+        out_file='egovlp_'+os.path.basename(src) + ('.mp4' if os.path.isdir(src) else '')
 
     vocab = get_vocab(vocab, ann_root, include, exclude)
     q = collections.deque(maxlen=n_frames)
 
+    emissions = []
+    Z_videos = []
+
     z_text = model.encode_text(vocab)
     print(z_text.shape)
 
-    with VideoInput(src, fps) as vin, \
+    
+    with FrameInput(src, 30, fps) if os.path.isdir(src) else VideoInput(src, fps) as vin, \
          VideoOutput(out_file, fps, show=show) as imout, \
          CsvWriter('egovlp_'+os.path.basename(src), header=['_time']+list(vocab)) as csvout:
         topk = topk_text = []
         for i, (t, im) in enumerate(vin):
             im = cv2.resize(im, (600, 400))
             q.append(model.prepare_image(im))
-            print(len(q))
             if not i % stride:
                 z_video = model.encode_video(torch.stack(list(q), dim=1).to(device))
                 sim = similarity(z_text, z_video, dual=False).detach()[0]
@@ -165,10 +209,51 @@ def run(src, vocab, include=None, exclude=None, out_file=None, n_frames=16, fps=
                 topk_text = [f'{vocab[i]} ({sim[i]:.2%})' for i in i_topk]
 
                 tqdm.tqdm.write(f'top: {topk}')
+                
+                emissions.append(sim.cpu().numpy())
+                Z_videos.append(z_video.cpu().numpy())
+
             imout.output(draw_text_list(im, topk_text)[0])
             
             csvout.write([t] + sim.tolist())
 
+    if out_file:
+        emissions = np.asarray(emissions).T
+        import matplotlib.pyplot as plt
+        plt.figure(figsize=(15, 8), dpi=300)
+        plt.imshow(np.asarray(emissions).T, aspect='auto', cmap='magma', origin='lower', interpolation='nearest')
+        plt.yticks(range(len(vocab)), vocab)
+        plt.colorbar()
+        plt.savefig(os.path.splitext(out_file)[0]+'_emissions.png')
+        np.savez(os.path.splitext(out_file)[0]+'_emissions.npz', emissions=emissions, vocab=vocab)
+
+
+
+def extract(src, out_dir, file_pattern='frame_{:010d}.png', fps=8, n_frames=16):
+    os.makedirs(out_dir, exist_ok=True)
+    name = os.path.splitext(os.path.basename(src.strip(os.sep)))[0]
+    name = f'{name}-n_frames={n_frames}-fps={fps}.npz'
+    out_file = os.path.join(out_dir, name)
+    print(out_file)
+    #input()
+
+    model = EgoVLP()
+
+    q = collections.deque(maxlen=n_frames)
+    
+    frames = []
+    Zs = []
+    with (FrameInput(os.path.join(src, file_pattern), 30, fps, give_time=False) if os.path.isdir(src) else VideoInput(src, fps, give_time=False)) as vin:
+        for i, (ii, im) in enumerate(vin):
+            q.append(model.prepare_image(im))
+            z_video = model.encode_video(torch.stack(list(q), dim=1).to(device))
+            Zs.append(z_video.cpu().numpy())
+            frames.append(ii)
+    name = os.path.splitext(os.path.basename(src))[0]
+    name = f'{name}-n_frames={n_frames}-fps={fps}.npz'
+    np.savez(out_file, Z_video=Zs, frame=frames)
+
+
 if __name__ == '__main__':
     import fire
-    fire.Fire(run)
+    fire.Fire()
