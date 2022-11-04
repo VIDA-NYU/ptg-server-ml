@@ -11,6 +11,7 @@ services:
     volumes:
       - ${VOLUMES}/models/cache:/root/.torch/iopath_cache/detic
       - ${VOLUMES}/models/cache:/root/.cache
+      - ${VOLUMES}/models:/src/app/models
     restart: unless-stopped
     deploy:
       resources:
