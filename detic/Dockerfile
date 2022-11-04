@@ -14,7 +14,7 @@ RUN apt-get -q update && \
 
 ADD setup.py README.md LICENSE $DIR/
 ADD ptgprocess/__init__.py $DIR/ptgprocess/
-RUN pip install --no-cache-dir -U -e '/src/lib/ptgprocess[detic]'
+RUN pip install --no-cache-dir -U -e '/src/lib/ptgprocess[detic,egohos]'
 ADD ptgprocess/ $DIR/ptgprocess/
 
 ADD detic/requirements.txt .

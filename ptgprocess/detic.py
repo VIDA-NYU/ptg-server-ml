@@ -111,6 +111,13 @@ class Detic(nn.Module):
         return out.get_image()[:, :, ::-1]
 
 
+    @staticmethod
+    def group_proposals(bbox):
+        bbox_unique, iv = np.unique(bbox, return_inverse=True, axis=0)
+        return bbox_unique, np.arange(len(bbox_unique))[:,None] == iv[None]
+
+
+
 # disable jitter
 def _jitter(self, c):
     return [c*255 for c in c]
