@@ -113,6 +113,26 @@ class EgoVLP(nn.Module):
     def similarity(self, z_text, z_video, **kw):
         return similarity(z_text, z_video, **kw)
 
+    def few_shot_predictor(self, vocab, vocab_dir='fewshot'):
+        vocab_dir = os.path.join(vocab_dir, vocab_dir)
+        if os.path.isdir(vocab_dir):
+            return FewShotPredictor(vocab_dir)
+
+    def zero_shot_predictor(self, vocab):
+        return ZeroShotPredictor(vocab, self)
+
+    def get_predictor(self, vocab, texts=None, vocab_dir='fewshot'):
+        pred = None
+        if isinstance(vocab, str):
+            pred = self.few_shot_predictor(vocab, vocab_dir)
+        if pred is None:
+            if texts is None and vocab is not None:
+                texts = vocab
+            if callable(texts):
+                texts = texts()
+            pred = self.zero_shot_predictor(vocab)
+        return pred
+
 
 def similarity(z_text, z_video, temp=1, temp_inv=1/500, dual=False):
     if dual:
@@ -133,6 +153,66 @@ def sim_matrix(a, b, eps=1e-8):
 
 def sim_matrix_mm(a, b):
     return torch.mm(a, b.transpose(0, 1))
+
+
+
+
+
+class ZeroShotPredictor(nn.Module):
+    def __init__(self, vocab, model, prompt='{}'):
+        super().__init__()
+        self.model = model
+        self.vocab = np.asarray(vocab)
+        tqdm.tqdm.write(f'zeroshot with: {vocab}')
+        self.Z_vocab = self.model.encode_text(vocab, prompt)
+
+    def forward(self, Z_image):
+        '''Returns the action probabilities for that frame.'''
+        scores = self.model.similarity(self.Z_vocab, Z_image).detach()
+        return scores
+
+class FewShotPredictor(nn.Module):
+    def __init__(self,  vocab_dir, n_neighbors=33):
+        super().__init__()
+
+        # load all the data
+        assert os.path.isdir(vocab_dir)
+        fsx = sorted(glob.glob(os.path.join(vocab_dir, 'X_*.npy')))
+        fsy = sorted(glob.glob(os.path.join(vocab_dir, 'Y_*.npy')))
+        assert all(
+            os.path.basename(fx).split('_', 1)[1] == os.path.basename(fy).split('_', 1)[1]
+            for fx, fy in zip(fsx, fsy)
+        )
+        fvocab = os.path.join(vocab_dir, 'classes.npy')
+
+        # load and convert to one big numpy array
+        X = np.concatenate([np.load(f) for f in fsx])
+        Y = np.concatenate([np.load(f) for f in fsy])
+        self.vocab = vocab = np.asarray(np.load(fvocab))
+        tqdm.tqdm.write(f'loaded {X.shape} {Y.shape}. {len(vocab)} {vocab}')
+
+        # train the classifier
+        tqdm.tqdm.write('training classifier...')
+        #self.clsf = KNeighborsClassifier(n_neighbors=n_neighbors)
+        self.clsf = XGBClassifier(tree_method='gpu_hist', predictor='gpu_predictor')
+        self.clsf.fit(X, Y)
+        print(self.clsf.classes_)
+        tqdm.tqdm.write('trained!')
+
+    def forward(self, Z_image):
+        scores = self.clsf.predict_proba(Z_image.cpu().numpy())
+        return scores
+
+def l2norm(Z, eps=1e-8):
+    return Z / np.maximum(np.linalg.norm(Z, keepdims=True), eps)
+
+def normalize(Z, eps=1e-8):
+    Zn = Z.norm(dim=1)[:, None]
+    return Z / torch.max(Zn, eps*torch.ones_like(Zn))
+
+
+
+
 
 
 class FrameInput:
