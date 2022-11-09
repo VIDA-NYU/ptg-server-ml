@@ -22,7 +22,8 @@ log.setLevel('DEBUG')
 #ptgctl.log.setLevel('WARNING')
 
 
-
+RECORDING_RAW_DIR = '/src/app/recordings/raw'
+RECORDING_POST_DIR = '/src/app/recordings/post'
 #import ray
 
 
@@ -76,8 +77,8 @@ class DeticApp:
     def __init__(self, **kw):
         self.api = ptgctl.API(username=os.getenv('API_USER') or 'detic',
                               password=os.getenv('API_PASS') or 'detic')
-        self.model = Detic(one_class_per_proposal=False, conf_threshold=self.low_conf)
-        self.egohos = EgoHos()
+        self.model = Detic(device='cuda:1', one_class_per_proposal=False, conf_threshold=self.low_conf)
+        self.egohos = EgoHos(device='cuda:0')
 
         #self.detic_model = DeticModel.remote(self.low_conf)
         #self.egohos_model = EgoHosModel.remote()
@@ -99,8 +100,6 @@ class DeticApp:
         recipe_sid = 'event:recipe:id'
         vocab_sid = 'event:recipes'
 
-        self.mean_person_confs_decay = 0
-
         self.change_recipe(self.api.session.current_recipe())
 
         pbar = tqdm.tqdm()
@@ -117,21 +116,13 @@ class DeticApp:
                         # watch for recipe changes
                         if sid in {recipe_sid, vocab_sid}:
                             #await writer.write(b'[]', b'[]')
-                            await ws_push.send_data([b'[]']*3, out_sids)
+                            await ws_push.send_data([b'[]']*len(out_sids), out_sids, [t]*len(out_sids))
                             log.debug(buffer.decode('utf-8'))
                             self.change_recipe(buffer.decode('utf-8'))
                             continue
                         
                         # compute box
-                        main = holoframe.load(buffer)
-                        im = main['image'][:,:,::-1]
-                        im_params = {
-                            'shape': im.shape,
-                            'focal': [main['focalX'], main['focalY']], 
-                            'principal': [main['principalX'], main['principalY']],
-                            'cam2world': main['cam2world'].tolist(),
-                        }
-
+                        im, im_params = self.load_image(buffer)
                         (xyxy, ivs, confs, class_ids, box_confs, ious) = self.predict(im)
 
                         objsv1 = self.as_v1_objs(xyxy, ivs, confs, class_ids)
@@ -144,8 +135,20 @@ class DeticApp:
                             jsondump({ 'objects': objsv1, 'image_params': im_params }),
                             jsondump(hand),
                         ], out_sids, [t]*len(out_sids))
+
+    def load_image(self, buffer):
+        main = holoframe.load(buffer)
+        im = main['image'][:,:,::-1]
+        im_params = {
+            'shape': im.shape,
+            'focal': [main['focalX'], main['focalY']],
+            'principal': [main['principalX'], main['principalY']],
+            'cam2world': main['cam2world'].tolist(),
+        }
+        return im, im_params
                         
     def change_recipe(self, recipe_id):
+        self.mean_person_confs_decay = 0
         if not recipe_id:
             print('no recipe. using default vocab:', DEFAULT_VOCAB)
             #vocab = ray.get(self.detic_model.set_vocab.remote(DEFAULT_VOCAB))
@@ -217,7 +220,7 @@ class DeticApp:
         # combine (exact) duplicate bounding boxes
         xyxy_unique, ivs = self.model.group_proposals(xyxy)
         # convert image boundaries to [0, 1]
-        xyxyn_unique = boxnorm(xyxy_unique, *im.shape[:2])
+        xyxyn_unique = boxnorm(xyxy_unique.copy(), *im.shape[:2])
 
         # # get hand object bboxes and get overlap with bboxes
         segs = self.egohos(im)[0]
@@ -289,6 +292,46 @@ class DeticApp:
             'mean_conf': mean_person_confs,
             'mean_conf_smooth': self.mean_person_confs_decay,
         }
+
+    def run_offline(self, recording_id, recipe_id):
+        from ptgprocess.record import RawReader, RawWriter, JsonWriter
+        self.change_recipe(recipe_id)
+
+        out_sids = ['detic:image', 'detic:image:v2', 'detic:image:for3d', 'detic:hands']
+
+        raw_dir = os.path.join(RECORDING_RAW_DIR, recording_id)
+        post_dir = os.path.join(RECORDING_POST_DIR, recording_id)
+        print("raw directory:", raw_dir)
+        with RawReader(os.path.join(raw_dir, 'main')) as reader, \
+             RawWriter(out_sids[0], raw_dir) as writer0, \
+             RawWriter(out_sids[1], raw_dir) as writer1, \
+             RawWriter(out_sids[2], raw_dir) as writer2, \
+             RawWriter(out_sids[3], raw_dir) as writer3, \
+             JsonWriter(out_sids[0], post_dir) as json0, \
+             JsonWriter(out_sids[1], post_dir) as json1, \
+             JsonWriter(out_sids[2], post_dir) as json2, \
+             JsonWriter(out_sids[3], post_dir) as json3:
+
+            for ts, d in reader:
+                # compute box
+                im, im_params = self.load_image(d)
+                (xyxy, ivs, confs, class_ids, box_confs, ious) = self.predict(im)
+
+                objsv1 = self.as_v1_objs(xyxy, ivs, confs, class_ids)
+                objsv2 = self.as_v2_objs(xyxy, ivs, confs, class_ids, box_confs, ious)
+                hand = self.get_hand_presence(self.labels[class_ids], confs)
+                obj_params = { 'objects': objsv1, 'image_params': im_params }
+
+                writer0.write(jsondump(objsv1), ts)
+                writer1.write(jsondump(objsv2), ts)
+                writer2.write(jsondump(obj_params), ts)
+                writer3.write(jsondump(hand), ts)
+                json0.write(jsondump({'data': objsv1, 'timestamp': ts}), ts)
+                json1.write(jsondump({'data': objsv2, 'timestamp': ts}), ts)
+                json2.write(jsondump({'data': obj_params, 'timestamp': ts}), ts)
+                json3.write(jsondump({'data': hand, 'timestamp': ts}), ts)
+
+
 
 
 def jsondump(data):

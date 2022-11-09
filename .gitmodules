@@ -7,3 +7,6 @@
 [submodule "ptgprocess/EgoHOS"]
 	path = ptgprocess/EgoHOS
 	url = https://github.com/owenzlz/EgoHOS
+[submodule "reasoning/tim-reasoning"]
+	path = reasoning/tim-reasoning
+	url = git@github.com:VIDA-NYU/tim-reasoning.git
