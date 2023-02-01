@@ -161,12 +161,14 @@ class AudioWriter(BaseWriter):
 
 class JsonWriter(BaseWriter):
     raw=True
-    def __init__(self, name, store_dir='', **kw):
+    def __init__(self, name, store_dir='', max_fps=None, **kw):
         super().__init__(**kw)
         self.fname = os.path.join(store_dir, f'{name}.json')
+        self.max_fps = None
         
     def context(self, **kw):
         self.i = 0
+        self.t_last = 0
         print("Opening json file:", self.fname, flush=True)
         with open(self.fname, 'wb') as self.fh:
             self.fh.write(b'[\n')
@@ -177,8 +179,16 @@ class JsonWriter(BaseWriter):
                 print('closing json', self.fname, flush=True)
 
     def write(self, d, ts=None):
+        # frame dropping
+        if ts is not None:
+            t = int(ts.split('-')[0])/1000
+            if self.max_fps and 1 / (t - self.t_last) > self.max_fps:
+                return
+            self.t_last = t
+            
         if self.i:
             self.fh.write(b',\n')
+
         if ts is not None:
             if isinstance(d, bytes):
                 d = orjson.loads(d)

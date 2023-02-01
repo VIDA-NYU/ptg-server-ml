@@ -165,8 +165,9 @@ class BaseRecorder(Processor):
                             t = parse_epoch_time(t)
                         if not raw:
                             x = holoframe.load(x)
-
-                        with self.Writer(sid, out_dir, sample=x, t_start=t, **kw) as writer:
+                        
+                        wkw = dict(self.get_writer_params(sid), **kw)
+                        with self.Writer(sid, out_dir, sample=x, t_start=t, **wkw) as writer:
                             raw = getattr(writer, 'raw', False)
                             raw_ts = getattr(writer, 'raw_ts', False)
 
@@ -184,6 +185,9 @@ class BaseRecorder(Processor):
                 import traceback
                 traceback.print_exc()
 
+    WRITER_PARAMS = {}
+    def get_writer_params(self, sid):
+        return self.WRITER_PARAMS.get(sid) or {}
 
 
 class RawRecorder(BaseRecorder):
@@ -212,6 +216,9 @@ class JsonRecorder(BaseRecorder):
         'pointcloud',
         'event*',
     ]
+    WRITER_PARAMS = {
+        'pointcloud': {'max_fps': 1/3}
+    }
 
 
 if __name__ == '__main__':

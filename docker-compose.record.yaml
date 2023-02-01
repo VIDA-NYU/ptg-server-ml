@@ -8,9 +8,11 @@ x-loki-logging: &lokilogging
 services:
 
   raw_recorder:
-    image: ptgprocess
+    image: ptgprocess:latest
     container_name: raw_recorder
     restart: unless-stopped
+    environment:
+      PTG_URL: "$PTG_URL"
     networks:
       - ptg
     volumes:
@@ -18,9 +20,11 @@ services:
     command: -m ptgprocess.processors.record raw run --continuous
 
   video_recorder:
-    image: ptgprocess
+    image: ptgprocess:latest
     container_name: video_recorder
     restart: unless-stopped
+    environment:
+      PTG_URL: "$PTG_URL"
     networks:
       - ptg
     volumes:
@@ -29,9 +33,11 @@ services:
     command: -m ptgprocess.processors.record video run --continuous
 
   audio_recorder:
-    image: ptgprocess
+    image: ptgprocess:latest
     container_name: audio_recorder
     restart: unless-stopped
+    environment:
+      PTG_URL: "$PTG_URL"
     networks:
       - ptg
     volumes:
@@ -40,9 +46,11 @@ services:
     command: -m ptgprocess.processors.record audio run --continuous
 
   json_recorder:
-    image: ptgprocess
+    image: ptgprocess:latest
     container_name: json_recorder
     restart: unless-stopped
+    environment:
+      PTG_URL: "$PTG_URL"
     networks:
       - ptg
     volumes:
