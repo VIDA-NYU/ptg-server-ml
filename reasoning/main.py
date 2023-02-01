@@ -86,15 +86,15 @@ class ReasoningApp:
                             await ws_push.send_data([orjson.dumps(entities)], re_entities_sid)
                         continue
 
-                    elif sid == SESSION_SID:  # A call to start a new session
-                        #self.state_manager.reset()
-                        continue
-
                     elif sid == UPDATE_STEP_SID:  # A call to update the step
                         step_index = int(data)
                         updated_step = self.state_manager.set_user_feedback(step_index)
                         if updated_step is not None:
                             await ws_push.send_data([orjson.dumps(updated_step)], re_check_status_sid)
+                        continue
+
+                    elif sid == SESSION_SID:  # A call to start a new session
+                        #self.state_manager.reset()
                         continue
 
                     elif sid == objects_sid:  # A call sending detected objects and bounding boxes
