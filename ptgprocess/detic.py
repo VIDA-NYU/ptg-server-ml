@@ -111,6 +111,19 @@ class Detic(nn.Module):
         return out.get_image()[:, :, ::-1]
 
 
+    @staticmethod
+    def group_proposals(bbox):
+        bbox_unique, iv = np.unique(bbox, return_inverse=True, axis=0)
+        return bbox_unique, np.arange(len(bbox_unique))[:,None] == iv[None]
+
+    @staticmethod
+    def boxnorm(xyxy, h, w):
+        xyxy[:, 0] = (xyxy[:, 0]) / w
+        xyxy[:, 1] = (xyxy[:, 1]) / h
+        xyxy[:, 2] = (xyxy[:, 2]) / w
+        xyxy[:, 3] = (xyxy[:, 3]) / h
+        return xyxy
+    
 # disable jitter
 def _jitter(self, c):
     return [c*255 for c in c]

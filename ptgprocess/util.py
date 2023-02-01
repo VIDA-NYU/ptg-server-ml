@@ -247,7 +247,8 @@ class VideoInput:
         if not cap.isOpened():
             raise RuntimeError(f"Could not open video source: {self.src}")
         self.src_fps = src_fps = cap.get(cv2.CAP_PROP_FPS)
-        self.every = max(1, round(src_fps/(self.dest_fps or src_fps)))
+        self.dest_fps, self.every = fps_cvt(src_fps, self.dest_fps)
+
         size = self.size or (
             int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)),
             int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)))
@@ -311,8 +312,9 @@ class FrameInput:
         if os.path.isdir(src):
             src = os.path.join(src, file_pattern)
         self.src = src
-        self.fps = fps or src_fps
         self.src_fps = src_fps
+        self.dest_fps, self.every = fps_cvt(src_fps, fps)
+
         self.give_time = give_time
         self.fallback_previous = fallback_previous
 
@@ -329,7 +331,7 @@ class FrameInput:
         import cv2
         fs = os.listdir(os.path.dirname(self.src))
         i_max = self.fname2i(max(fs))
-        every = self.cvt_fps(self.src_fps, self.fps)
+        self.dest_fps, every = fps_cvt(self.src_fps, self.fps)
         print(f'{self.src}: fps {self.src_fps} to {self.fps}. taking every {every} frames')
 
         im = None
@@ -345,6 +347,13 @@ class FrameInput:
 
             im = cv2.imread(f)
             yield t, im
+
+
+def fps_cvt(src_fps, dest_fps):
+    dest_fps = dest_fps or src_fps
+    every = max(1, int(round(src_fps/dest_fps)))
+    dest_fps = src_fps / every
+    return dest_fps, every
 
 
 

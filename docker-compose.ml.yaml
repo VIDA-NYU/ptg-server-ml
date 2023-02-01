@@ -8,19 +8,24 @@ services:
       context: .
       dockerfile: detic/Dockerfile
     container_name: detic
+    environment:
+      PTG_URL: $PTG_URL
     volumes:
       - ${VOLUMES}/models/cache:/root/.torch/iopath_cache/detic
       - ${VOLUMES}/models/cache:/root/.cache
+      - ${VOLUMES}/models:/src/app/models
+      - ${VOLUMES}/recordings:/src/app/recordings
     restart: unless-stopped
     deploy:
       resources:
         reservations:
           devices:
             - driver: nvidia
-              count: 1
+              count: 2
               capabilities: [gpu]
     devices:
-     - /dev/nvidia1:/dev/nvidia0
+     - /dev/nvidia0:/dev/nvidia0
+     - /dev/nvidia1:/dev/nvidia1
   
   egovlp:
     image: egovlp
@@ -32,8 +37,11 @@ services:
     volumes:
       - ${VOLUMES}/models/cache:/root/.cache
       - ${VOLUMES}/models:/src/app/models
+      - ${VOLUMES}/fewshot:/src/app/fewshot
+      - ${VOLUMES}/recordings:/src/app/recordings
     environment:
       LOCAL_RANK: '0'
+      PTG_URL: $PTG_URL
     restart: unless-stopped
     deploy:
       resources:
@@ -70,18 +78,24 @@ services:
     container_name: reasoning
     restart: unless-stopped
     #command: -c 'import time;time.sleep(600)'
-    #volumes:
-    #  - ${VOLUMES}/models/reasoning:/src/app/models
-    #devices:
-    # - /dev/nvidia0:/dev/nvidia0
+    environment:
+      PTG_URL: $PTG_URL
+    volumes:
+      - ${VOLUMES}/models/reasoning:/src/app/models
+    devices:
+     - /dev/nvidia0:/dev/nvidia0
 
   memory:
     build: ./memory
     container_name: memory
     restart: unless-stopped
+    environment:
+      PTG_URL: $PTG_URL
 
   in3d:
     build: ./in3d
     container_name: in3d
     restart: unless-stopped
+    environment:
+      PTG_URL: $PTG_URL
 

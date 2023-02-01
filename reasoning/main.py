@@ -16,7 +16,7 @@ SESSION_SID = 'event:session:id'
 UPDATE_STEP_SID = 'event:recipe:step'
 ACTIONS_CLIP_SID = 'clip:action:steps'
 ACTIONS_EGOVLP_SID = 'egovlp:action:steps'
-OBJECTS_SID = 'detic:image'
+OBJECTS_SID = 'detic:image:v2'
 REASONING_STATUS_SID = 'reasoning:check_status'
 REASONING_ENTITIES_SID = 'reasoning:entities'
 
@@ -24,6 +24,14 @@ REASONING_ENTITIES_SID = 'reasoning:entities'
 CONFIGS = {'tagger_model_path': join(os.environ['REASONING_MODELS_PATH'], 'recipe_tagger'),
            'bert_classifier_path': join(os.environ['REASONING_MODELS_PATH'], 'bert_classifier')}
 
+
+#def data_pull_connect(self, stream_id: str, ack=True, **kw):
+#    if isinstance(stream_id, (list, tuple)):
+#        stream_id = '+'.join(stream_id)
+#    if '+' in stream_id or stream_id == '*':
+#        kw.setdefault('batch', True)
+#    return self._ws('data', stream_id, 'pull?ack=True', cls=ptgctl.core.DataStream, ack=True, **kw)
+#ptgctl.API.data_pull_connect = data_pull_connect
 
 class ReasoningApp:
 
@@ -78,15 +86,15 @@ class ReasoningApp:
                             await ws_push.send_data([orjson.dumps(entities)], re_entities_sid)
                         continue
 
-                    elif sid == SESSION_SID:  # A call to start a new session
-                        #self.state_manager.reset()
-                        continue
-
                     elif sid == UPDATE_STEP_SID:  # A call to update the step
                         step_index = int(data)
                         updated_step = self.state_manager.set_user_feedback(step_index)
                         if updated_step is not None:
                             await ws_push.send_data([orjson.dumps(updated_step)], re_check_status_sid)
+                        continue
+
+                    elif sid == SESSION_SID:  # A call to start a new session
+                        #self.state_manager.reset()
                         continue
 
                     elif sid == objects_sid:  # A call sending detected objects and bounding boxes

@@ -229,6 +229,8 @@ class RawReader:
         if os.path.isdir(src):
             fs = sorted(glob.glob(os.path.join(src, '*')))
         else:
+            if not os.path.isfile(src) and os.path.isfile(f'{src}.zip'):
+                src = f'{src}.zip'
             fs = [src]
         self.fs = fs
 
