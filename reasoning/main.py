@@ -16,7 +16,7 @@ SESSION_SID = 'event:session:id'
 UPDATE_STEP_SID = 'event:recipe:step'
 ACTIONS_CLIP_SID = 'clip:action:steps'
 ACTIONS_EGOVLP_SID = 'egovlp:action:steps'
-OBJECTS_SID = 'detic:image'
+OBJECTS_SID = 'detic:image:v2'
 REASONING_STATUS_SID = 'reasoning:check_status'
 REASONING_ENTITIES_SID = 'reasoning:entities'
 
@@ -24,6 +24,14 @@ REASONING_ENTITIES_SID = 'reasoning:entities'
 CONFIGS = {'tagger_model_path': join(os.environ['REASONING_MODELS_PATH'], 'recipe_tagger'),
            'bert_classifier_path': join(os.environ['REASONING_MODELS_PATH'], 'bert_classifier')}
 
+
+#def data_pull_connect(self, stream_id: str, ack=True, **kw):
+#    if isinstance(stream_id, (list, tuple)):
+#        stream_id = '+'.join(stream_id)
+#    if '+' in stream_id or stream_id == '*':
+#        kw.setdefault('batch', True)
+#    return self._ws('data', stream_id, 'pull?ack=True', cls=ptgctl.core.DataStream, ack=True, **kw)
+#ptgctl.API.data_pull_connect = data_pull_connect
 
 class ReasoningApp:
 
