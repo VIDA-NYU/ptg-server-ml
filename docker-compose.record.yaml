@@ -13,8 +13,6 @@ services:
     restart: unless-stopped
     environment:
       PTG_URL: "$PTG_URL"
-    networks:
-      - ptg
     volumes:
       - ${VOLUMES}/recordings/raw:/src/app/recordings
     command: -m ptgprocess.processors.record raw run --continuous
@@ -25,8 +23,6 @@ services:
     restart: unless-stopped
     environment:
       PTG_URL: "$PTG_URL"
-    networks:
-      - ptg
     volumes:
       - ${VOLUMES}/recordings/post:/src/app/recordings
       - ${VOLUMES}/recordings/raw:/src/app/raw
@@ -38,8 +34,6 @@ services:
     restart: unless-stopped
     environment:
       PTG_URL: "$PTG_URL"
-    networks:
-      - ptg
     volumes:
       - ${VOLUMES}/recordings/post:/src/app/recordings
       - ${VOLUMES}/recordings/raw:/src/app/raw
@@ -51,8 +45,6 @@ services:
     restart: unless-stopped
     environment:
       PTG_URL: "$PTG_URL"
-    networks:
-      - ptg
     volumes:
       - ${VOLUMES}/recordings/post:/src/app/recordings
       - ${VOLUMES}/recordings/raw:/src/app/raw
@@ -61,6 +53,6 @@ services:
 
 # connect these containers to the server containers
 networks:
-  ptg:
+  default:
     external: true
-    name: ptg-api-server_default
+    name: ptg

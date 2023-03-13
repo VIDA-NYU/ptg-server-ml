@@ -82,6 +82,8 @@ services:
       PTG_URL: $PTG_URL
     volumes:
       - ${VOLUMES}/models/reasoning:/src/app/models
+      - ${VOLUMES}/models/reasoning/nltk:/usr/share/nltk_data
+      - ${VOLUMES}/models/reasoning/spacy:/opt/conda/lib/python3.8/site-packages/en_core_web_lg
     devices:
      - /dev/nvidia0:/dev/nvidia0
 
@@ -99,3 +101,8 @@ services:
     environment:
       PTG_URL: $PTG_URL
 
+# connect these containers to the server containers
+networks:
+  default:
+    name: ptg
+    external: true

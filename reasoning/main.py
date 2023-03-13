@@ -11,6 +11,8 @@ logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(name)s:%(message
 logger = logging.getLogger(__name__)
 #ptgctl.log.setLevel('WARNING')
 
+
+
 RECIPE_SID = 'event:recipe:id'
 SESSION_SID = 'event:session:id'
 UPDATE_STEP_SID = 'event:recipe:step'
@@ -119,7 +121,12 @@ class ReasoningApp:
     async def run(self, *args, **kwargs):
         while True:
             try:
-                await self.run_reasoning(*args, **kwargs)
+                recipe = self.api.session.current_recipe()
+                if recipe:
+                    await self.run_reasoning(*args, **kwargs)
+                else:
+                    print(recipe)
+                    await asyncio.sleep(1)
             except Exception:
                 import traceback
                 traceback.print_exc()
