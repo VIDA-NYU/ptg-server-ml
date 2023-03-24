@@ -1,8 +1,11 @@
 from __future__ import annotations
 import os
 import sys
+import glob
 import collections
 import tqdm
+
+import pickle
 
 os.environ['LOCAL_RANK'] = os.getenv('LOCAL_RANK') or '0'
 
@@ -16,6 +19,8 @@ import torch.nn.functional as F
 from torchvision import transforms as T
 from torchvision.transforms._transforms_video import NormalizeVideo
 import transformers
+
+from .model_util import TensorQueue
 
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -156,8 +161,6 @@ def sim_matrix_mm(a, b):
 
 
 
-
-
 class ZeroShotPredictor(nn.Module):
     def __init__(self, vocab, model, prompt='{}'):
         super().__init__()
@@ -172,8 +175,18 @@ class ZeroShotPredictor(nn.Module):
         return scores
 
 class FewShotPredictor(nn.Module):
-    def __init__(self,  vocab_dir, n_neighbors=33):
+    def __init__(self,  vocab_dir, **kw):
         super().__init__()
+        self._load_model(vocab_dir, **kw)
+
+    def _load_model(self, vocab_dir, clsf_type='knn', n_neighbors=33):
+        pkl_fname = f'{vocab_dir}_{clsf_type}.pkl'
+        if os.path.isfile(pkl_fname):
+            with open(pkl_fname, 'rb') as fh:
+                tqdm.tqdm.write('loading classifier...')
+                self.clsf, self.vocab = pickle.load(fh)
+                tqdm.tqdm.write(f'loaded classifier from disk. {len(self.vocab)} {self.vocab}')
+            return
 
         # load all the data
         assert os.path.isdir(vocab_dir)
@@ -193,11 +206,19 @@ class FewShotPredictor(nn.Module):
 
         # train the classifier
         tqdm.tqdm.write('training classifier...')
-        #self.clsf = KNeighborsClassifier(n_neighbors=n_neighbors)
-        self.clsf = XGBClassifier(tree_method='gpu_hist', predictor='gpu_predictor')
+        if clsf_type == 'knn':
+            from sklearn.neighbors import KNeighborsClassifier
+            self.clsf = KNeighborsClassifier(n_neighbors=n_neighbors)
+        elif clsf_type == 'xgb':
+            from xgboost import XGBClassifier
+            self.clsf = XGBClassifier(tree_method='gpu_hist', predictor='gpu_predictor')
+        else:
+            raise ValueError(f"Invalid classifier {clsf_type}")
         self.clsf.fit(X, Y)
-        print(self.clsf.classes_)
         tqdm.tqdm.write('trained!')
+
+        with open(pkl_fname, 'wb') as fh:
+            pickle.dump([self.clsf, self.vocab], fh)
 
     def forward(self, Z_image):
         scores = self.clsf.predict_proba(Z_image.cpu().numpy())
@@ -211,6 +232,33 @@ def normalize(Z, eps=1e-8):
     return Z / torch.max(Zn, eps*torch.ones_like(Zn))
 
 
+class ShotEgoVLP(EgoVLP):
+    predictor = None
+    # def __init__(self, *a, **kw):
+    #     super().__init__(*a, **kw)
+    
+    def set_vocab(self, vocab, few_shot_dir, step_map=None):
+        self.predictor = self._get_predictor(vocab, few_shot_dir, step_map)
+        assert self.predictor is not None
+        self.vocab = self.predictor.vocab
+
+    def _get_predictor(self, vocab, few_shot_dir, step_map=None):
+        if os.path.isdir(few_shot_dir):
+            tqdm.tqdm.write('few shot')
+            self.predictor = FewShotPredictor(few_shot_dir)
+
+        tqdm.tqdm.write('zero shot')
+        if not vocab:
+            raise ValueError(f'no vocab for recipe {os.path.basename(few_shot_dir)}')
+        self.predictor = ZeroShotPredictor(vocab, self)
+        if step_map:
+            self.predictor.vocab = np.array([step_map.get(x,x) for x in self.predictor.vocab])
+
+    def predict_video(self, vid):
+        assert self.predictor is not None
+        z_image = self.model.encode_video(vid)
+        sim = self.predictor(z_image)
+        return sim
 
 
 
@@ -265,7 +313,7 @@ def run(src, vocab, include=None, exclude=None, out_file=None, n_frames=16, fps=
         out_file='egovlp_'+os.path.basename(src) + ('.mp4' if os.path.isdir(src) else '')
 
     vocab = get_vocab(vocab, ann_root, include, exclude)
-    q = collections.deque(maxlen=n_frames)
+    q = TensorQueue(n_frames, dim=1)
 
     emissions = []
     Z_videos = []
@@ -280,9 +328,9 @@ def run(src, vocab, include=None, exclude=None, out_file=None, n_frames=16, fps=
         topk = topk_text = []
         for i, (t, im) in enumerate(vin):
             im = cv2.resize(im, (600, 400))
-            q.append(model.prepare_image(im))
+            q.push(model.prepare_image(im))
             if not i % stride:
-                z_video = model.encode_video(torch.stack(list(q), dim=1).to(device))
+                z_video = model.encode_video(q.tensor().to(device))
                 sim = similarity(z_text, z_video, dual=False).detach()[0]
                 i_topk = torch.topk(sim, k=5).indices.tolist()
                 topk = [vocab[i] for i in i_topk]
