@@ -160,7 +160,8 @@ class AudioWriter(BaseWriter):
 
 
 class JsonWriter(BaseWriter):
-    raw=True
+    #raw=True
+    raw_ts=True
     def __init__(self, name, store_dir='', max_fps=None, **kw):
         super().__init__(**kw)
         self.fname = os.path.join(store_dir, f'{name}.json')
@@ -190,13 +191,23 @@ class JsonWriter(BaseWriter):
             self.fh.write(b',\n')
 
         if ts is not None:
-            if isinstance(d, bytes):
-                d = orjson.loads(d)
-            if not isinstance(d, dict):
-                d = {'data': d}
-            d['timestamp'] = ts
-        if not isinstance(d, bytes):
-            d = orjson.dumps(d, option=orjson.OPT_NAIVE_UTC | orjson.OPT_SERIALIZE_NUMPY)
+            try:
+                if isinstance(d, bytes):
+                    d = orjson.loads(d)
+                if not isinstance(d, dict):
+                    d = {'data': d}
+                d['timestamp'] = ts
+            except Exception:
+                print("error reading data")
+                print(d)
+                raise
+        try:
+            if not isinstance(d, bytes):
+                d = orjson.dumps(d, option=orjson.OPT_NAIVE_UTC | orjson.OPT_SERIALIZE_NUMPY)
+        except Exception:
+            print("error writing data")
+            print(d)
+            raise
         self.fh.write(d)
         self.i += 1
 

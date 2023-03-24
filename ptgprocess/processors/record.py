@@ -111,7 +111,7 @@ class BaseRecorder(Processor):
     def run_missing(self, *rec_ids, raw_dir, streams=None, confirm=False, overwrite=False, **kw):
         from ptgctl.util import parse_epoch_time
         from ptgctl import holoframe
-        
+        selected_streams = streams
 
         assert os.path.abspath(raw_dir) != os.path.abspath(self.STORE_DIR), "um whatchu doin"
         all_rec_ids = os.listdir(raw_dir)
@@ -132,8 +132,8 @@ class BaseRecorder(Processor):
                 missing = set(src_streams)
                 if not overwrite:
                     missing -= out_streams
-                if streams:
-                    missing = set(streams)&missing
+                if selected_streams:
+                    missing = set(selected_streams)&missing
                 streams = self.match_streams(list(missing))
                 print("found existing", out_streams)
                 print("found raw", src_streams)
