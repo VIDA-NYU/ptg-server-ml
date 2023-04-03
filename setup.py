@@ -5,9 +5,9 @@ ML_DEPS = ['torch', 'torchvision']
 CLIP = 'clip @ git+https://github.com/openai/CLIP.git@main#egg=clip'
 deps = {
     'image': IMAGE_DEPS,
-    'audio': ['sounddevice', 'soundfile'],
+    'audio': ['sounddevice', 'soundfile', 'librosa', 'simplejson'],
     'clip': IMAGE_DEPS+['torch', CLIP],
-    'yolo': IMAGE_DEPS+['torch'],
+    'yolo': IMAGE_DEPS+['torch', 'ultralytics'],
     'omnivore': ['hydra-core', 'einops', 'iopath', 'timm'],
     'egovlp': ['transformers', 'av', 'decord', 'ffmpeg', 'humanize', 'psutil', 'transformers', 'timm', 'einops'],
     'detic': ML_DEPS+[CLIP, 'detectron2 @ git+https://github.com/facebookresearch/detectron2.git@main#egg=detectron2', ],
@@ -23,7 +23,11 @@ setuptools.setup(
     author='Bea Steers',
     author_email='bea.steers@gmail.com',
     url=f'https://github.com/VIDA-NYU/ptg-server-ml',
-    packages=['ptgprocess'],
+    packages=['ptgprocess'],#, 'audio_slowfast'
+    # package_dir={
+    #     "": ".",
+    #     "audio_slowfast": "ptgprocess/auditory-slow-fast/audio_slowfast",
+    # },
     # entry_points={'console_scripts': ['ptgprocess=ptgprocess:main']},
     install_requires=[
         'numpy', 'orjson', 'tqdm',
@@ -35,7 +39,7 @@ setuptools.setup(
         'doc': ['sphinx-rtd-theme'],
         **deps,
         'all': [vi for v in deps.values() for vi in v],
-        'current': [vi for k in ['image', 'egovlp', 'detic', 'egohos'] for vi in deps[k]],
+        'current': [vi for k in ['image', 'egovlp', 'detic', 'egohos'] for vi in (deps[k] if k in deps else [])],
     },
     license='MIT License',
     keywords='ptg machine learning processing recording server local data streams')
