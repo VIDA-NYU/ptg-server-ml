@@ -140,10 +140,6 @@ class ActionSession:
         self.q = deque(maxlen=16)
         self.sim_decay = 0
 
-    def clear(self):
-        self.q.clear()
-        self.sim_decay = 0
-
     def on_image(self, image, **extra):
         # add the image to the frame queue
         self.q.append(self.model.prepare_image(image))
@@ -156,6 +152,8 @@ class ActionSession:
             self.model.vocab.tolist(), 
             sim.tolist(),
         ))
+
+
 
 
 class RecipeExit(Exception):
@@ -239,8 +237,9 @@ class ActionApp:
                         # watch recipe changes
                         if sid == recipe_sid or sid == vocab_sid:
                             print("recipe changed", recipe_id, '->', d, flush=True)
-                            self.start_session(d.decode('utf-8'))
-                            continue
+                            return 
+                            # self.start_session(d.decode('utf-8'))
+                            # continue
 
                         # predict actions
                         preds = self.session.on_image(**holoframe.load(d))
