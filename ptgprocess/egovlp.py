@@ -232,6 +232,20 @@ def normalize(Z, eps=1e-8):
     return Z / torch.max(Zn, eps*torch.ones_like(Zn))
 
 
+def get_predictor(model, vocab, few_shot_dir, step_map=None):
+    if os.path.isdir(few_shot_dir):
+        tqdm.tqdm.write('few shot')
+        predictor = FewShotPredictor(few_shot_dir)
+    else:
+        tqdm.tqdm.write('zero shot')
+        if not vocab:
+            raise ValueError(f'no vocab for recipe {os.path.basename(few_shot_dir)}')
+        predictor = ZeroShotPredictor(vocab, model)
+    if step_map:
+        predictor.vocab = np.array([step_map.get(x,x) for x in predictor.vocab])
+    return predictor
+
+
 class ShotEgoVLP(EgoVLP):
     predictor = None
     # def __init__(self, *a, **kw):
@@ -243,16 +257,17 @@ class ShotEgoVLP(EgoVLP):
         self.vocab = self.predictor.vocab
 
     def _get_predictor(self, vocab, few_shot_dir, step_map=None):
-        if os.path.isdir(few_shot_dir):
-            tqdm.tqdm.write('few shot')
-            self.predictor = FewShotPredictor(few_shot_dir)
+        return get_predictor(self, vocab, few_shot_dir, step_map)
+        # if os.path.isdir(few_shot_dir):
+        #     tqdm.tqdm.write('few shot')
+        #     self.predictor = FewShotPredictor(few_shot_dir)
 
-        tqdm.tqdm.write('zero shot')
-        if not vocab:
-            raise ValueError(f'no vocab for recipe {os.path.basename(few_shot_dir)}')
-        self.predictor = ZeroShotPredictor(vocab, self)
-        if step_map:
-            self.predictor.vocab = np.array([step_map.get(x,x) for x in self.predictor.vocab])
+        # tqdm.tqdm.write('zero shot')
+        # if not vocab:
+        #     raise ValueError(f'no vocab for recipe {os.path.basename(few_shot_dir)}')
+        # self.predictor = ZeroShotPredictor(vocab, self)
+        # if step_map:
+        #     self.predictor.vocab = np.array([step_map.get(x,x) for x in self.predictor.vocab])
 
     def predict_video(self, vid):
         assert self.predictor is not None

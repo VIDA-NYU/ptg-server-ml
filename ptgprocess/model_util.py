@@ -1,16 +1,17 @@
 import collections
 import torch
 
-class TensorQueue:
+class TensorQueue(collections.deque):
     def __init__(self, size, dim=0):
-        self.queue = collections.deque(maxlen=size)
+        super().__init__(maxlen=size)
         self.dim = dim
 
-    def clear(self):
-        self.queue.clear()
+    def append(self, x):
+        super().append(x)
+        return self
 
     def push(self, x):
-        self.queue.append(x)
+        return self.append(x)
 
     def tensor(self):
-        return torch.stack(list(self.queue), dim=self.dim)
+        return torch.stack(list(self), dim=self.dim)
