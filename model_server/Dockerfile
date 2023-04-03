@@ -10,13 +10,15 @@ RUN apt-get -q update && \
 
 ADD setup.py README.md LICENSE $DIR/
 ADD ptgprocess/__init__.py $DIR/ptgprocess/
-RUN pip install --no-cache-dir -U -e '/src/lib/ptgprocess[detic,egohos,egovlp]'
-ADD ptgprocess/ $DIR/ptgprocess/
+RUN pip install --no-cache-dir -U -e '/src/lib/ptgprocess[all]'
 
 ADD model_server/requirements.txt .
 RUN pip install -r requirements.txt
+# RUN pip install
+
+ADD ptgprocess/ $DIR/ptgprocess/
 ADD model_server/app.py .
 
 WORKDIR /src/app
-#ENTRYPOINT ["bash"]
-CMD ["app.py", "run"]
+ENTRYPOINT ["bash"]
+CMD ["-c", "serve run app:server"]
