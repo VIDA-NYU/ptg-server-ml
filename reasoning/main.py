@@ -18,13 +18,13 @@ SESSION_SID = 'event:session:id'
 UPDATE_STEP_SID = 'event:recipe:step'
 ACTIONS_CLIP_SID = 'clip:action:steps'
 ACTIONS_EGOVLP_SID = 'egovlp:action:steps'
+STEPS_OMNIMIX_SID = 'omnimix:step'
 OBJECTS_SID = 'detic:image:v2'
 REASONING_STATUS_SID = 'reasoning:check_status'
 REASONING_ENTITIES_SID = 'reasoning:entities'
 
 
-CONFIGS = {'tagger_model_path': join(os.environ['REASONING_MODELS_PATH'], 'recipe_tagger'),
-           'bert_classifier_path': join(os.environ['REASONING_MODELS_PATH'], 'bert_classifier')}
+CONFIGS = {'tagger_model_path': join(os.environ['REASONING_MODELS_PATH'], 'recipe_tagger')}
 
 
 #def data_pull_connect(self, stream_id: str, ack=True, **kw):
@@ -56,10 +56,11 @@ class ReasoningApp:
     async def run_reasoning(self, prefix='', top=5, use_egovlp=True):
         actions_sid = prefix + ACTIONS_EGOVLP_SID if use_egovlp else prefix + ACTIONS_CLIP_SID
         objects_sid = prefix + OBJECTS_SID
+        steps_sid = prefix + STEPS_OMNIMIX_SID
         re_check_status_sid = prefix + REASONING_STATUS_SID
         re_entities_sid = prefix + REASONING_ENTITIES_SID
 
-        async with self.api.data_pull_connect([actions_sid, objects_sid, RECIPE_SID, SESSION_SID, UPDATE_STEP_SID], ack=True) as ws_pull, \
+        async with self.api.data_pull_connect([actions_sid, objects_sid, steps_sid, RECIPE_SID, SESSION_SID, UPDATE_STEP_SID], ack=True) as ws_pull, \
                    self.api.data_push_connect([re_check_status_sid, re_entities_sid], batch=True) as ws_push:
 
             recipe_id = self.api.session.current_recipe()
@@ -74,9 +75,11 @@ class ReasoningApp:
 
             detected_actions = None
             detected_objects = None
+            detected_steps = None
 
             while True:
                 for sid, timestamp, data in await ws_pull.recv_data():
+
                     if sid == RECIPE_SID:  # A call to start a new recipe
                         recipe_id = data.decode('utf-8')
                         first_step = self.start_recipe(recipe_id)
@@ -101,21 +104,29 @@ class ReasoningApp:
 
                     elif sid == objects_sid:  # A call sending detected objects and bounding boxes
                         detected_objects = orjson.loads(data)
-                        logger.info(f'Perception objects: {str(detected_objects)}')
+                        #logger.info(f'Perception objects: {str(detected_objects)}')
 
                     elif sid == actions_sid:  # A call sending detected actions
                         detected_actions = orjson.loads(data)
                         detected_actions = sorted(detected_actions.items(), key=lambda x: x[1], reverse=True)[:top]
                         logger.info(f'Perception actions: {str(detected_actions)}')
 
-                    if detected_objects is not None and detected_actions is not None:
-                        recipe_status = self.state_manager.check_status(detected_actions, detected_objects)
+                    elif sid == steps_sid:  # A call sending detected steps
+                        detected_steps = orjson.loads(data)
+                        detected_steps = {int(k.split('|')[0]) - 1: v for k, v in detected_steps.items()}
+                        logger.info(f'Perception steps: {str(detected_steps)}')
+
+                    if detected_objects is not None and detected_actions is not None and detected_steps is not None:
+                        recipe_status = self.state_manager.check_status(detected_actions, detected_objects, detected_steps)
                         logger.info(f'Reasoning outputs: {str(recipe_status)}')
                         if recipe_status is not None:
+                            recipe_status['step_id'] = int(recipe_status['step_id'])
                             await ws_push.send_data([orjson.dumps(recipe_status)], re_check_status_sid)
                             # Reset the values of the detected inputs
                             detected_actions = None
                             detected_objects = None
+                            detected_steps = None
+
 
     @ptgctl.util.async2sync
     async def run(self, *args, **kwargs):
