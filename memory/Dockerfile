@@ -6,6 +6,7 @@ WORKDIR /src/app
 ADD requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-ADD re_id.py .
+ADD utils.py .
+ADD impl.py .
 ADD main.py .
 CMD ["main.py", "run" ]
