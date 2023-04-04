@@ -2,4 +2,4 @@ matplotlib
 opencv-python
 orjson
 tqdm
-ray
+timm
