@@ -17,6 +17,5 @@ download_model() {
 }
 
 maybe_download_model recipe_tagger 1aYSlngadawRTKuIkd1FtMvrMBfenqPLH
-maybe_download_model bert_classifier 1RsXbLrIubPTAbgP3NEAB73LMcAKDV3oE
 
 python main.py run
