@@ -1,4 +1,5 @@
-# tim-reasoning @ git+https://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@github.com/VIDA-NYU/tim-reasoning.git@9cb6a6d8e1aef05e9633794ea865c74d3e980ba4
+# tim-reasoning @ git+https://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@github.com/VIDA-NYU/tim-reasoning.git@1a6375fc5e391396bfd0da59dcb44f4135a395ac
+#9cb6a6d8e1aef05e9633794ea865c74d3e980ba4
 # 47ba847a05e479e5aae19298f8b2a75dc430b288
 # ca5622d8f9c0149bc2ed4d3a0cbb2e94efea58f3
 orjson
