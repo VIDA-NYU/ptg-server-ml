@@ -176,6 +176,7 @@ class ActionApp:
         elif model_name == 'omnivore':
             from ptgprocess.omnivore import Omnivore
             self.model = Omnivore(**kw)
+        self.model.eval()
         self.q = deque(maxlen=16)
 
     @ptgctl.util.async2sync
