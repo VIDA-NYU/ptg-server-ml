@@ -1,0 +1,137 @@
+########
+# 1. BASIC HEADER STUFF (required)
+########
+header: 
+  sender:                            # name / id you pick
+  sender software version:           # version of your software you pick 
+  header fmt version: 1.0            # 1.0 until we decide otherwise
+  transmit timestamp:                # your clock at xmit time in fractional seconds since 1970
+  closest hololens dataframe timestamp:  # clock for the most recent hololens frame as seconds since 1970
+
+########
+# 2a. CASUALTY COUNT / WORK STATIONS
+# HARD CODED FOR DEMO 1 (required)
+########
+casualties:
+  populated:      true # false if there are no casualties detected
+  count:          1 # integer, how many human bodies tasks are being tended to (0 if none)
+  confidence:     1.0 # (0-1.0) Your confidence in this count
+
+########
+# 2b. HARD CODED FOR DEMO 1 (required)
+########
+ # skills open per casualty:
+ # dictionary of a list (key is casualty number), 
+ #  each element of the list is a list of two items.  
+ #  The two items are skill number (integer) and confidence (0-1.0). 
+ #  Confidence is the measure of certainty that the skill listed is really the skill.
+ 
+skills open per casualty:
+  populated: true  # false if there are no skills detected
+  casualty: 
+   1:
+    - [M1,1.0]  
+    - [M2,1.0]  
+    - [R18,0.5]  
+    - [M5,0.0]  
+    - [M3,0.0]
+      
+########
+# 2c. WHICH OF THESE SKILLS ARE DONE (optional/required?)
+# THIS WILL CHANGE AS TREATMENT PROGRESSES
+########
+ # belief skill is done per casualty:
+ #  dictionary of a list (key is casualty number), 
+ #  each element of the list is a list of two items.  
+ #  The two items are skill number (integer) and belief the skill is complete (0-1.0). 
+ #  This is your systems belief that we've seen the end of activity on this skill.
+ #  It is not a measure of progress, or of correctness.  Just that we're done with the skill.
+ #  If you are certain the skill is completed, your belief it is complete is 1.0.
+ #  If you are certain the skill is being worked on your belief it is complete is 0.0. 
+ #  If you have no measure of this, your belief will always stay at 0.5
+
+belief skill is done per casualty:
+  populated: true  # false if there are no skills detected
+  casualty:
+   1:
+    - [M1,1.0]  
+    - [M2,1.0]  
+    - [R18,0.5]  
+    - [M5,0.0]  
+    - [M4,0.0]
+
+########
+# 2d. WHAT IS THE CURRENT SKILL STEP ACTIVITY? (required)
+# MAY CHANGE EVERY FEW SECONDS
+########
+
+users current actions right now:
+  populated: true  # false if there have been no skills or casualties
+  casualty currently working on:
+    casualty:     1    # HARD CODED FOR DEMO 1
+    confidence:   1.0  # HARD CODED FOR DEMO 1
+  current skill:
+    number:       R18  # WHICH SKILL?
+    confidence:   1.0  # confidence of which skill (0-1.0)
+  steps: # STATE OF EACH STEP 
+    -  
+      number: 1 
+      name:   "Identify gunshot wound or penetrating trauma to chest" # String, looked up from the specific skill number, skill step
+      state:  implied
+      confidence:  0.65
+    -  
+      number: 2 
+      name:   "With gloved hand, cover and seal wound site."
+      state:  done
+      confidence:  0.99
+    -  
+      number: 3  
+      name:   "Open vented chest seal package." 
+      state:  done
+      confidence:  0.98
+    -  
+      number: 4 
+      name:   "Wipe blood and body fluids from wound site." 
+      state:  current
+      confidence:  0.46
+    -  
+      number: 5  
+      name:   "Peel away chest seal backer."
+      state:  unobserved
+      confidence:  0.99
+    -  
+      number: 6  
+      name:   "Place chest seal with circle of vents over wound site and seal to chest." 
+      state:  unobserved
+      confidence:  0.99
+    -  
+      number: 7  
+      name:   "Look for exit wound, if found repeat process." 
+      state:  unobserved
+      confidence:  0.5
+
+#######
+# 3. MEASURE OF PROGRESS TOWARDS NEXT STEP (optional)
+#######
+
+next step progress velocity:
+  populated: false  # set to true if you're populating this
+  velocity:  0 # TA1 arbitrary score (0-1) of progress from the current step to the next step
+
+######
+# 4. DO WE BELIEVE THERE ARE ANY ERRORS?  (optional)
+# This assumes a common error dictionary that will be described elsewhere
+###### 
+
+current errors:
+   populated: false  # set to true when we get here and is being used. will happen per skill. 
+   errors:
+   # will start by leaving this empty. will populate it later. 
+   
+######
+# 5. TA1 needs to consult with me about this.  (future)
+######
+
+current user state: # TBD need help from this part of the community
+   populated: false  # set to true when defined and you are using this. 
+   # will start by leaving this empty. will populate it later. 

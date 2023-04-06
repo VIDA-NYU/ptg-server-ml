@@ -1,0 +1,65 @@
+step_states: ['unobserved', 'implied', 'done']
+
+skills:
+  M2: 
+    desc: Apply Tourniquet
+    steps:
+     - Place tourniquet with over  effected extremity 2-3 inches above wound site.
+     - Pull tourniquet tight.
+     - Cinch tourniquet strap.
+     - Apply strap to strap body.
+     - Turn windless clock wise or counter clockwise until hemorrhage is controlled.
+     - Lock windless into the windless keeper.
+     - Pull remaining strap over the windless keeper.
+     - Secure strap and windless keeper with keeper securing device.
+     - Mark time on securing device strap with permanent marker.
+
+  M1:
+    desc: trauma assessment
+    steps:
+     - Optionally unclothe depending on situation.
+     - Sweep* left leg.
+     - Sweep* right leg.
+     - Sweep* chest.
+     - Sweep* left arm.
+     - Sweep* right arm.
+     - Look Listen Feel Breathing.
+     - Rake** chest."
+     - Roll over casualty.
+     - Rake the back and buttocks.
+     - Check pulse.
+     - Check skin temperature / quality.
+     - Determine position to leave casualty.
+     - Optionally reclothe depending on situation.
+
+  R18:
+    desc: Apply chest seal
+    steps:
+     - Identify gunshot wound or penetrating trauma to chest.
+     - With gloved hand, cover and seal wound site.
+     - Open vented chest seal package.
+     - Wipe blood and body fluids from wound site.
+     - Peel away chest seal backer.
+     - Place chest seal with circle of vents over wound site and seal to chest.
+     - Look for exit wound, if found repeat process.
+
+  M5:
+    desc: X-Stat 12
+    steps:
+     - Open inner packaging and remove applicator.
+     - Insert applicator into wound track as close to bleeding source as possible.
+     - Insert plunger into applicator.
+     - Push plunger firmly to deploy sponges into wound.
+     - Completely fill wound track with sponges.
+     - Cover wound site with pressure dressing.
+     - Apply manual pressure if necessary.
+
+  M3:
+    desc: Apply pressure dressing
+    steps:
+     - Apply direct hand pressure.
+     - Open dressing packaging.
+     - Apply dressing with pressure point directly over wound site.
+     - Wrap dressing around effected area extremity or trunk with 80 precent elastic stretch.
+     - Secure dressing with securing device.
+     - Apply direct hand pressure for 5 minutes.

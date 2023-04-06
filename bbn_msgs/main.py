@@ -1,104 +1,146 @@
 import os
+import re
+import time
 import orjson
 import asyncio
-from collections import OrderedDict, defaultdict, deque
 
 import logging
 import tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
 
-import numpy as np
-from torch import nn
-from torch.nn import functional as F
+import zmq.asyncio
+import yaml
+import yaml_messages
 
 import ptgctl
-from ptgctl import holoframe
 import ptgctl.util
 
-from ptgprocess.omnimix import Omnivore, AudioSlowFast, OmniGRU
 
 logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(name)s:%(message)s')
 log = logging.getLogger(__name__)
 log.setLevel('DEBUG')
 
-import torch
-# from torch import nn
 
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
+class MsgSession:
+    def __init__(self, skill_id):
+        self.steps = {}
+        self.message = yaml_messages.Message(skill_id, errors=True)
 
-class StepsSession:
-    vocab_key = 'steps_simple'
-    decay = 0.5
-    def __init__(self, model, vocab, step_mask, prefix=None):
-        self.model = model
-        self.rgb_q = deque(maxlen=32)
-        self.aud_q = deque(maxlen=16)
-        self.rgb_emb_q = deque(maxlen=8)
-        self.aud_emb_q = deque(maxlen=8)
-        self.step_vocab = vocab
-        self.step_mask = torch.Tensor(step_mask).int()
-        self.sim_decay = 0
-        prefix = f'{prefix or ""}omnimix'
+    def on_reasoning_step(self, data):        
+        self.message.update_step(data['step_id'])
+        self.message.update_errors(data['error_description'] if data['error_status'] else False)
+        return str(self.message)
 
-        self.step_sid = f'{prefix}:step'
-        self.rgb_verb_sid = f'{prefix}:verb:rgb'
-        self.audio_verb_sid = f'{prefix}:verb:audio'
-        self.output_sids = [
-            self.step_sid,
-            # f'{prefix}:action:rgb',
-            self.rgb_verb_sid,
-            # f'{prefix}:noun:rgb',
-            self.audio_verb_sid,
-            # f'{prefix}:noun:audio',
-        ]
-        self.empty_rgb_emb = torch.zeros(1, 1024).to(device)
-        self.empty_aud_emb = torch.zeros(1, 2304).to(device)
 
-    def format_message(self, steps):
-        return {
-            "populated": True,
-            "casualty currently working on": {
-                "casualty": 1,
-                "confidence": 1.0,
-            },
-            "current skill": {
-                "number": "R18",
-                "confidence": 1.0,
-            },
-            "users current actions right now": {
-                "steps": [
-                    {
-                        "name": name,
-                        "state": "idk",
-                        "confidence": conf,
-                    }
-                    for name, conf in steps.items()
-                ],
-            }
-        }
 
-    def on_image(self, image, **extra):
-        # add the image to the frame queue
-        self.rgb_q.append(self.model.rgb.prepare_image(image))
-        verb, noun = self._predict_video()
-        steps = self._predict_step()
-        return {
-            self.step_sid: dict(zip(self.step_vocab.tolist(), steps.tolist())) if steps is not None else None, 
-            self.rgb_verb_sid: dict(zip(self.model.aud.vocab[0], verb[0].tolist())),
-        }
+class ZMQClient:
+    def __init__(self, address):
+        assert address
+        self.address = address
+        self.context = zmq.asyncio.Context()
+
+    async def __aenter__(self):
+        # Connect to the server
+        print("Connecting to server…")
+        self.socket = socket = self.context.socket(zmq.REQ)
+        socket.connect(self.address)
+        print("Connected...")
+        return self
+
+    async def __aexit__(self, *a):
+        self.socket.close()
+
+    async def send(self, message):
+        # Send the yaml string to the server, check for proper response
+        await self.socket.send_string(message)
+        response = await self.socket.recv_string()
+        if "Error" in response:
+            raise IOError(f"ERROR: Invalid response from server - {response}")
 
 
 class RecipeExit(Exception):
     pass
 
+class InvalidMessage(Exception):
+    pass
 
 
 class MsgApp:
+    ORG_NAME = 'nyu'
     def __init__(self, **kw):
         self.api = ptgctl.API(username=os.getenv('API_USER') or 'bbn_msgs',
                               password=os.getenv('API_PASS') or 'bbn_msgs')
+        
+    @ptgctl.util.async2sync
+    async def run_ctl_listener(self, address=os.getenv("ZMQ_ADDRESS")):
+        name = self.ORG_NAME
+        # this loop should be modified and incorporated into client code
+        # so it can listen to and respond to the server
+        # Connect to the server
+        context = zmq.Context()
+        print(f"Connecting to server [{address}]…")
+        socket = context.socket(zmq.DEALER)
+        socket.connect(address)
+        try:
+            socket.send_string(f"{self.ORG_NAME}:OK")
+            print("Connected...")
+            while True:
+                if socket.poll(timeout=2):
+                    response = socket.recv_string()
+                    print(f"{name}: Received message: {response}")
+                    try:                    
+                        out_msg = self.handle_control_message(response)
+                    except Exception as e:
+                        out_msg = str(e)
+                    socket.send_string(f"{name}:{out_msg or 'OK'}", flags=zmq.DONTWAIT)
+                time.sleep(.5)
+        finally:
+            socket.close()
 
-    @torch.no_grad()
+    name_translate = {'-': None, '?': None, '.': None}
+    cmd_translate = {'stopped': 'stop', 'started': 'start', 'done': 'stop'}
+    recipe_translate = {'m2': 'tourniquet'} # FIXME: !! this should be stored in the DB
+    def handle_control_message(self, msg):
+        match = re.search(r'(\w+) (\w+) (\w+)', msg.lower())
+        group, name, verb = 'experiment', None, msg
+        if match:
+            group = match.group(1)
+            name = match.group(2)
+            verb = match.group(3)
+            name = self.name_translate.get(name, name)
+            verb = self.cmd_translate.get(verb, verb)
+        if group == 'experiment':
+            if verb == 'start':
+                return
+            if verb == 'stop':
+                self.api.session.stop_recipe()
+                return
+            if verb == 'pause':
+                return
+        if group == 'skill':
+            if verb == 'start':
+                assert name, f"start what?"
+                if name not in self.recipe_translate:
+                    raise InvalidMessage(f"Unsupported skill {name}")
+                name = self.recipe_translate.get(name, name)
+                self.api.session.start_recipe(name)
+                return
+            if verb == 'stop':
+                self.api.session.stop_recipe()
+                return
+            if verb == 'pause':
+                return
+        if group == 'record':
+            if verb == 'start':
+                self.api.recordings.start(name)
+                return
+            if verb == 'stop':
+                self.api.recordings.stop()
+                return
+        
+        raise InvalidMessage(f"Unrecognized message: {msg}")
+
+
     @ptgctl.util.async2sync
     async def run(self, *a, **kw):
         '''Persistent running app, with error handling and recipe status watching.'''
@@ -126,29 +168,27 @@ class MsgApp:
                     if data != recipe_id:
                         return data
 
-    def start_session(self, recipe_id, prefix=None):
+    def start_session(self, skill_id, prefix=None):
         '''Initialize the action session for a recipe.'''
-        if not recipe_id:
-            raise RecipeExit("no recipe set.")
-        self.session = MsgSession()
+        if not skill_id:
+            raise RecipeExit("no skill set.")
+        skill = self.api.recipes.get(skill_id)
+        skill_id = skill.get('skill_id')
+        if not skill_id:
+            raise RecipeExit("skill has no skill_id key.")
+        self.session = MsgSession(skill_id)
 
-    async def run_recipe(self, recipe_id, prefix=None):
+    async def run_recipe(self, recipe_id, address=os.getenv("ZMQ_ADDRESS"), prefix=None):
         '''Run the recipe.'''
         self.start_session(recipe_id, prefix=prefix)
 
         # stream ids
-        # in_rgb_sid = 'main'
-        # in_aud_sid = 'mic0'
-        in_rgb_sid = f'{prefix or ""}main'
-        in_aud_sid = f'{prefix or ""}mic0'
+        reasoning_sid = f'{prefix or ""}reasoning:check_status'
         recipe_sid = f'{prefix or ""}event:recipe:id'
         vocab_sid = f'{prefix or ""}event:recipes'
 
-        print(self.session.output_sids)
-
         pbar = tqdm.tqdm()
-        async with self.api.data_pull_connect([in_rgb_sid, in_aud_sid, recipe_sid, vocab_sid], ack=True) as ws_pull, \
-                   self.api.data_push_connect(self.session.output_sids, batch=True) as ws_push:
+        async with self.api.data_pull_connect([reasoning_sid, recipe_sid, vocab_sid], ack=True) as ws_pull, ZMQClient(address) as zq:
             with logging_redirect_tqdm():
                 while True:
                     pbar.set_description('waiting for data...')
@@ -160,45 +200,18 @@ class MsgApp:
                             print("recipe changed", recipe_id, '->', d, flush=True)
                             self.start_session(recipe_id, prefix=prefix)
                             continue
+                        if self.session is None:
+                            continue
 
                         # predict actions
                         preds = None
-                        if sid == in_rgb_sid:
-                            preds = self.session.on_image(**holoframe.load(d))
-                        elif sid == in_aud_sid:
-                            preds = self.session.on_audio(**holoframe.load(d))
-                        if preds is not None:
-                            preds = {k: v for k, v in preds.items() if v is not None}
-                            await ws_push.send_data(
-                                [jsondump({k: round(v, 2) for k, v in sorted(x.items(), key=lambda x: -x[1])}) for x in preds.values()], 
-                                list(preds.keys()), 
-                                [t]*len(preds))
-
-    # def run_offline(self, recording_id, recipe_id, out_sid='egovlp:action:steps'):
-    #     from ptgprocess.record import RawReader, RawWriter, JsonWriter
-    #     self.start_session(recipe_id)
-
-    #     raw_dir = os.path.join(RECORDING_RAW_DIR, recording_id)
-    #     post_dir = os.path.join(RECORDING_POST_DIR, recording_id)
-    #     print("raw directory:", raw_dir)
-    #     #  RawWriter(out_sid, raw_dir) as writer, 
-    #     with RawReader(os.path.join(raw_dir, 'main')) as reader, \
-    #          JsonWriter(out_sid, post_dir) as json_writer:
- 
-    #         for ts, d in reader:
-    #             sim_dict = self.session.on_image(**holoframe.load(d))
-    #             writer.write(jsondump(sim_dict), ts)
-    #             json_writer.write(jsondump({**sim_dict, 'timestamp': ts}), ts)
-
-
-
-
-def jsondump(data):
-    return orjson.dumps(data, option=orjson.OPT_NAIVE_UTC | orjson.OPT_SERIALIZE_NUMPY)
-
-
+                        if sid == reasoning_sid:
+                            preds = self.session.on_reasoning_step(orjson.loads(d))
+                        if preds:
+                            await zq.send(preds)
+                        
 
 
 if __name__ == '__main__':
     import fire
-    fire.Fire(StepsApp)
+    fire.Fire(MsgApp)
