@@ -40,7 +40,7 @@ class AudioSlowFast(nn.Module):
         step_size = cfg.AUDIO_DATA.HOP_LENGTH
         self.win_size = int(round(window_size * cfg.AUDIO_DATA.SAMPLING_RATE / 1e3))
         self.hop_size = int(round(step_size * cfg.AUDIO_DATA.SAMPLING_RATE / 1e3))
-        self.num_frames = cfg.AUDIO_DATA.NUM_FRAMES
+        self.num_frames = 400#cfg.AUDIO_DATA.NUM_FRAMES
         self.num_classes = cfg.MODEL.NUM_CLASSES
 
         # build and load model
@@ -50,7 +50,7 @@ class AudioSlowFast(nn.Module):
         cu.load_test_checkpoint(cfg, self.model)
         self.model.head.__class__ = ResNetBasicHead
 
-    def prepare_audio(self, y, sr):
+    def prepare_audio(self, y, sr=24000):
         spec = librosa.stft(
             y, n_fft=2048,
             window='hann',
@@ -61,18 +61,14 @@ class AudioSlowFast(nn.Module):
             sr=sr, n_fft=2048, n_mels=128, htk=True, norm=None)
         spec = np.dot(mel_basis, np.abs(spec))
         spec = np.log(spec + self.eps)
+
         npad = max(0, self.num_frames - spec.shape[-1])
-        # print(spec.shape)
         spec = np.pad(spec, ((0, npad), (0, 0)), 'edge')
-        # print(spec.shape)
-        spec = librosa.util.frame(spec, frame_length=400, hop_length=100)
-        # print(spec.shape)
+        spec = librosa.util.frame(spec, frame_length=self.num_frames, hop_length=int(self.num_frames//4))
         spec = spec.transpose((2, 1, 0))[:,None]
 
-        # print(spec.shape)
         spec = torch.tensor(spec, dtype=torch.float) # mono to stereo
         spec = pack_pathway_output(self.cfg, spec)
-        # print(spec.shape)
         return spec
 
     def forward(self, specs, return_embedding=False):
@@ -81,7 +77,7 @@ class AudioSlowFast(nn.Module):
         if self.model.training:
             y = [x.view((len(x), -1, s)) for x, s in zip(y, self.num_classes)]
         if return_embedding:
-            return y, z
+            return y, z[:, 0, 0]
         return y
 
 

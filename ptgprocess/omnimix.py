@@ -17,7 +17,7 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 MODEL_DIR = os.getenv('MODEL_DIR') or 'models'
 DEFAULT_CONFIG = os.path.join(mod_path, 'config/STEPGRU.yaml')
-DEFAULT_CHECKPOINT = os.path.join(MODEL_DIR, 'omnimix_rgb_audio.pt')
+DEFAULT_CHECKPOINT = os.path.join(MODEL_DIR, 'model_best.pt')
 
 # class Omnimix(nn.Module):
 #     def __init__(self):
