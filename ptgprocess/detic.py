@@ -76,6 +76,8 @@ class Detic(nn.Module):
         self.set_vocab(vocab, prompt)
         
     def set_vocab(self, vocab, prompt=DEFAULT_PROMPT):
+        if isinstance(vocab, (np.ndarray, torch.Tensor)):
+            vocab = vocab.tolist()
         if isinstance(vocab, (list, tuple)):
             self.vocab_key = '__vocab:' + ','.join(vocab)
             self.metadata = metadata = MetadataCatalog.get(self.vocab_key)
@@ -94,7 +96,7 @@ class Detic(nn.Module):
                 ).detach().permute(1, 0).contiguous().cpu()
             self.text_features = classifier
         else:
-            vocab = vocab or 'lvis'
+            vocab = 'lvis' if vocab is None else vocab
             self.vocab_key = BUILDIN_METADATA_PATH[vocab]
             self.metadata = metadata = MetadataCatalog.get(BUILDIN_METADATA_PATH[vocab])
             classifier = BUILDIN_CLASSIFIER[vocab]    
@@ -123,7 +125,19 @@ class Detic(nn.Module):
         xyxy[:, 2] = (xyxy[:, 2]) / w
         xyxy[:, 3] = (xyxy[:, 3]) / h
         return xyxy
-    
+
+    def unpack_results(self, outputs, im):
+        insts = outputs['instances'].to("cpu")
+        xyxy = insts.pred_boxes.tensor.numpy()
+        class_ids = insts.pred_classes.numpy().astype(int)
+        confs = insts.scores.numpy()
+        box_confs = insts.box_scores.numpy()
+        # combine (exact) duplicate bounding boxes
+        xyxy_unique, ivs = self.group_proposals(xyxy)
+        xyxyn_unique = self.boxnorm(xyxy_unique, *im.shape[:2])
+        labels = self.labels[class_ids]
+        return xyxyn_unique, ivs, class_ids, labels, confs, box_confs
+
 # disable jitter
 def _jitter(self, c):
     return [c*255 for c in c]

@@ -20,8 +20,9 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 MODEL_DIR = os.path.join(os.getenv("MODEL_DIR") or 'models', 'egohos')
 
 class BaseEgoHos(nn.Module):
-    def __init__(self, config, checkpoint=None, device=device):
+    def __init__(self, config=None, checkpoint=None, device=device):
         super().__init__()
+        assert config is not None, "You must provide a config"
         if not os.path.isfile(config):
             self.name = config
             config = os.path.join(MODEL_DIR, config, f'{config}.py')

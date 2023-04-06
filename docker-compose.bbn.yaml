@@ -1,0 +1,60 @@
+version: '3'
+
+services:
+
+  bbn_msgs:
+    image: bbn_msgs
+    build:
+      context: .
+      dockerfile: bbn_msgs/Dockerfile
+    container_name: bbn_msgs
+    environment:
+      PTG_URL: $PTG_URL
+      ZMQ_ADDRESS: tcp://bbn_msgs_test:5555
+      PYTHONUNBUFFERED: "1"
+    restart: unless-stopped
+
+  bbn_ctl:
+    image: bbn_msgs
+    build:
+      context: .
+      dockerfile: bbn_msgs/Dockerfile
+    container_name: bbn_ctl
+    command: main.py run_ctl_listener
+    environment:
+      PTG_URL: $PTG_URL
+      ZMQ_ADDRESS: tcp://bbn_ctl_test:5555
+      PYTHONUNBUFFERED: "1"
+    restart: unless-stopped
+
+  bbn_msgs_test:
+    image: bbn_msgs
+    build:
+      context: .
+      dockerfile: bbn_msgs/Dockerfile
+    expose: ["5555"]
+    container_name: bbn_msgs_test
+    command: test_steps.py
+    environment:
+      PTG_URL: $PTG_URL
+      PYTHONUNBUFFERED: "1"
+    restart: unless-stopped
+
+  bbn_ctl_test:
+    image: bbn_msgs
+    build:
+      context: .
+      dockerfile: bbn_msgs/Dockerfile
+    expose: ["5555"]
+    container_name: bbn_ctl_test
+    command: test_ctl.py
+    environment:
+      PTG_URL: $PTG_URL
+      PYTHONUNBUFFERED: "1"
+    restart: unless-stopped
+
+# connect these containers to the server containers
+networks:
+  default:
+    name: ptg
+    external: true

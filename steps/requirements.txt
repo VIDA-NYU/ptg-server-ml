@@ -1,0 +1,14 @@
+torch
+librosa
+simplejson
+h5py
+fvcore
+psutil
+
+hydra-core
+einops
+pytorchvideo
+timm
+torchvision
+torchaudio
+pandas
