@@ -52,7 +52,7 @@ class BBNObjectSession:
         xyxy = outputs[0].to("cpu").boxes.xyxy.numpy()
         ious = self.get_egohos_overlap(image, xyxy)
         objsv1 = self.as_v1_objs(xyxyn, confs, class_ids)
-        objsv2 = self.as_v2_objs(xyxyn, confs, class_ids, labels, ious)
+        objsv2 = self.as_v2_objs(outputs[0].boxes.xyxy, confs, class_ids, labels, ious)
         hand = self.get_hand_presence(self.model.labels[class_ids], confs)
         return dict(zip(self.out_sids, [
             objsv1,
@@ -318,6 +318,9 @@ class ObjectApp:
         self.bbn_model = BBNYolo()
         self.detic_model = Detic(device='cuda:0', one_class_per_proposal=False, conf_threshold=self.low_conf)
         self.egohos = EgoHos(device='cuda:0')
+        # self.bbn_model.eval()
+        self.detic_model.eval()
+        self.egohos.eval()
 
     @ptgctl.util.async2sync
     async def run(self, *a, **kw):
@@ -398,21 +401,44 @@ class ObjectApp:
                                 list(preds.keys()), 
                                 [t]*len(preds))
 
-    # def run_offline(self, recording_id, recipe_id, out_sid='egovlp:action:steps'):
-    #     from ptgprocess.record import RawReader, RawWriter, JsonWriter
-    #     self.start_session(recipe_id)
+    @torch.no_grad()
+    def run_offline(self, recording_id, recipe_id, prefix=None):
+        from contextlib import ExitStack
+        from ptgprocess.util import VideoInput
+        from ptgprocess.record import RawReader, RawWriter, JsonWriter
+        self.start_session(recipe_id, prefix=prefix)
 
-    #     raw_dir = os.path.join(RECORDING_RAW_DIR, recording_id)
-    #     post_dir = os.path.join(RECORDING_POST_DIR, recording_id)
-    #     print("raw directory:", raw_dir)
-    #     with RawReader(os.path.join(raw_dir, 'main')) as reader, \
-    #          RawWriter(out_sid, raw_dir) as writer, \
-    #          JsonWriter(out_sid, post_dir) as json_writer:
- 
-    #         for ts, d in reader:
-    #             sim_dict = self.session.on_image(**holoframe.load(d))
-    #             writer.write(jsondump(sim_dict), ts)
-    #             json_writer.write(jsondump({**sim_dict, 'timestamp': ts}), ts)
+        with ExitStack() as exits:
+            raw_writer = None
+            if os.path.isfile(recording_id):
+                loader = lambda x: {'image': x, 'focalX': 0, 'focalY': 0, 'principalX': 0, 'principalY': 0, 'cam2world': np.zeros((4,4))}
+                reader = VideoInput(recording_id)
+                post_dir = os.path.splitext(recording_id)[0]
+            else:
+                loader = lambda d: holoframe.load(d)
+                raw_dir = os.path.join(RECORDING_RAW_DIR, recording_id)
+                post_dir = os.path.join(RECORDING_POST_DIR, recording_id)
+                print("raw directory:", raw_dir)
+                reader = RawReader(os.path.join(raw_dir, 'main'))
+                raw_writer = RawWriter(self.session.out_sids, raw_dir)
+                exits.enter_context(raw_writer)
+            os.makedirs(post_dir, exist_ok=True)
+            json_writers = {
+                s: JsonWriter(s, post_dir)
+                for s in self.session.out_sids
+            }
+            for w in json_writers.values():
+                exits.enter_context(w)
+            exits.enter_context(reader)
+
+            for ts, d in reader:
+                if isinstance(ts, float):
+                    ts = ptgctl.util.format_epoch_time(ts)
+                out = self.session.on_image(**loader(d))
+                if raw_writer:
+                    raw_writer.write(jsondump(out), ts)
+                for k, x in out.items():
+                    json_writers[k].write(jsondump({'data': x, 'timestamp': ts}), ts)
 
 
 
