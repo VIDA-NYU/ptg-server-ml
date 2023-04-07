@@ -1,4 +1,4 @@
-FROM ptgctl
+FROM ptgctl:latest
 
 ENV DIR=/src/lib/ptgprocess
 
