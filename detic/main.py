@@ -326,10 +326,10 @@ class DeticApp:
                 writer1.write(jsondump(objsv2), ts)
                 writer2.write(jsondump(obj_params), ts)
                 writer3.write(jsondump(hand), ts)
-                json0.write(jsondump({'data': objsv1, 'timestamp': ts}), ts)
-                json1.write(jsondump({'data': objsv2, 'timestamp': ts}), ts)
-                json2.write(jsondump({'data': obj_params, 'timestamp': ts}), ts)
-                json3.write(jsondump({'data': hand, 'timestamp': ts}), ts)
+                json0.write(jsondump({'values': objsv1, 'timestamp': ts}), ts)
+                json1.write(jsondump({'values': objsv2, 'timestamp': ts}), ts)
+                json2.write(jsondump({'values': obj_params, 'timestamp': ts}), ts)
+                json3.write(jsondump({'values': hand, 'timestamp': ts}), ts)
 
 
 

@@ -92,11 +92,14 @@ class BaseRecorder(Processor):
                         print('\n'*3, "stopping recording", recording_id, x, '\n------------', flush=True)
                         break
 
-
-                    if not (raw or raw_ts):        
-                        t = parse_epoch_time(t)
-                    if not raw:
-                        x = holoframe.load(x)
+                    try:
+                        if not (raw or raw_ts):        
+                            t = parse_epoch_time(t)
+                        if not raw:
+                            x = holoframe.load(x)
+                    except Exception as e:
+                        print(f'{type(e).__name__}: {e} - {t} {x}')
+                        continue
 
                     if sid not in writers:
                         writers[sid] = stack.enter_context(
@@ -161,11 +164,16 @@ class BaseRecorder(Processor):
                         if xx is None:
                             return
                         t, x = xx
-                        if not (raw or raw_ts):
-                            t = parse_epoch_time(t)
-                        if not raw:
-                            x = holoframe.load(x)
                         
+                        try:
+                            if not (raw or raw_ts):
+                                t = parse_epoch_time(t)
+                            if not raw:
+                                x = holoframe.load(x)
+                        except Exception as e:
+                            print(f'{type(e).__class__}: {e} - {t} {x}')
+                            continue
+
                         wkw = dict(self.get_writer_params(sid), **kw)
                         with self.Writer(sid, out_dir, sample=x, t_start=t, **wkw) as writer:
                             raw = getattr(writer, 'raw', False)
