@@ -19,8 +19,12 @@ ADD ptgprocess/ $DIR/ptgprocess/
 
 ADD detic/requirements.txt .
 RUN pip install -r requirements.txt
+RUN pip install timm # fixme
 ADD detic/main.py .
+ADD detic/entrypoint.sh .
 
-WORKDIR /src/app
+ENTRYPOINT "/src/app/entrypoint.sh"
+
+#WORKDIR /src/app
 #ENTRYPOINT ["bash"]
-CMD ["main.py", "run"]
+#CMD ["main.py", "run"]

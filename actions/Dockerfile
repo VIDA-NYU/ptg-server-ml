@@ -21,6 +21,8 @@ ADD ptgprocess/ $DIR/ptgprocess/
 ADD actions/requirements.txt .
 RUN pip install -r requirements.txt
 ADD actions/main.py .
+ADD actions/entrypoint.sh .
 
 #ENTRYPOINT ["bash"]
-CMD ["main.py", "run"]
+ENTRYPOINT /src/app/entrypoint.sh
+#CMD ["main.py", "run"]

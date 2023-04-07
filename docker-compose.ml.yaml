@@ -2,42 +2,88 @@ version: '3'
 
 services:
 
-  detic:
-    image: detic
+  omnimix:
+    image: omnimix
     build:
       context: .
-      dockerfile: detic/Dockerfile
-    container_name: detic
+      dockerfile: steps/Dockerfile
+    container_name: omnimix
     environment:
       PTG_URL: $PTG_URL
+      PYTHON_UNBUFFERED: "1"
     volumes:
-      - ${VOLUMES}/models/cache:/root/.torch/iopath_cache/detic
-      - ${VOLUMES}/models/cache:/root/.cache
       - ${VOLUMES}/models:/src/app/models
-      - ${VOLUMES}/recordings:/src/app/recordings
+      - ${VOLUMES}/models/cache:/root/.cache
+      - ${VOLUMES}/models/torch_iocache:/root/.torch/iopath_cache
     restart: unless-stopped
     deploy:
       resources:
         reservations:
           devices:
             - driver: nvidia
-              count: 2
+              count: 1
               capabilities: [gpu]
     devices:
      - /dev/nvidia0:/dev/nvidia0
-     - /dev/nvidia1:/dev/nvidia1
+
+  bbn_objects:
+    image: bbn_objects
+    build:
+      context: .
+      dockerfile: bbn_objects/Dockerfile
+    container_name: bbn_objects
+    environment:
+      PTG_URL: $PTG_URL
+    volumes:
+      - ${VOLUMES}/models:/src/app/models
+      - ${VOLUMES}/models/cache:/root/.cache
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    devices:
+     - /dev/nvidia0:/dev/nvidia0
+
+  # detic:
+  #   image: detic
+  #   build:
+  #     context: .
+  #     dockerfile: detic/Dockerfile
+  #   container_name: detic
+  #   environment:
+  #     PTG_URL: $PTG_URL
+  #   volumes:
+  #     - ${VOLUMES}/models/cache:/root/.torch/iopath_cache/detic
+  #     - ${VOLUMES}/models/cache:/root/.cache
+  #     - ${VOLUMES}/models:/src/app/models
+  #     - ${VOLUMES}/recordings:/src/app/recordings
+  #   restart: unless-stopped
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             count: 2
+  #             capabilities: [gpu]
+  #   devices:
+  #    - /dev/nvidia0:/dev/nvidia0
+  #    - /dev/nvidia1:/dev/nvidia1
   
   egovlp:
     image: egovlp
     build:
       context: .
-      dockerfile: egovlp/Dockerfile
+      dockerfile: actions/Dockerfile
     container_name: egovlp
     #command: -c 'import time;time.sleep(600)'
     volumes:
       - ${VOLUMES}/models/cache:/root/.cache
       - ${VOLUMES}/models:/src/app/models
-      - ${VOLUMES}/fewshot:/src/app/fewshot
+      - ${VOLUMES}/models/fewshot:/src/app/fewshot
       - ${VOLUMES}/recordings:/src/app/recordings
     environment:
       LOCAL_RANK: '0'
