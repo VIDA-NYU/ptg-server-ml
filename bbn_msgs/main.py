@@ -44,7 +44,7 @@ class ZMQClient:
         print("Connecting to server…")
         self.socket = socket = self.context.socket(zmq.REQ)
         socket.connect(self.address)
-        print("Connected...")
+        print("Connected...", self.address)
         return self
 
     async def __aexit__(self, *a):
@@ -172,7 +172,7 @@ class MsgApp:
         '''Initialize the action session for a recipe.'''
         if not skill_id:
             raise RecipeExit("no skill set.")
-        skill = self.api.recipes.get(skill_id)
+        skill = self.api.recipes.get(skill_id) or {}
         skill_id = skill.get('skill_id')
         if not skill_id:
             raise RecipeExit("skill has no skill_id key.")

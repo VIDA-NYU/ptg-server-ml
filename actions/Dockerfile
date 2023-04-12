@@ -16,10 +16,10 @@ ENV DIR=/src/lib/ptgprocess
 ADD setup.py README.md LICENSE $DIR/
 ADD ptgprocess/__init__.py $DIR/ptgprocess/
 RUN pip install --no-cache-dir -U -e '/src/lib/ptgprocess'
-ADD ptgprocess/ $DIR/ptgprocess/
-
 ADD actions/requirements.txt .
 RUN pip install -r requirements.txt
+
+ADD ptgprocess/ $DIR/ptgprocess/
 ADD actions/main.py .
 ADD actions/entrypoint.sh .
 
