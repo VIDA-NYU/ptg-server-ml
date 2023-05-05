@@ -15,4 +15,4 @@
 	url = git@github.com:beasteers/auditory-slow-fast.git
 [submodule "ptgprocess/procedural_step_recog"]
 	path = ptgprocess/procedural_step_recog
-	url = https://github.com/iranroman/procedural_step_recog.git
+	url = git@github.com:iranroman/procedural_step_recog.git
