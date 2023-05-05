@@ -303,8 +303,7 @@ class RecipeExit(Exception):
     pass
 
 
-
-
+n_gpus = torch.cuda.device_count()
 
 class ObjectApp:
     low_conf = 0.1
@@ -317,7 +316,7 @@ class ObjectApp:
                               password=os.getenv('API_PASS') or 'bbn_yolo')
         self.bbn_model = BBNYolo()
         self.detic_model = Detic(device='cuda:0', one_class_per_proposal=False, conf_threshold=self.low_conf)
-        self.egohos = EgoHos(device='cuda:0')
+        self.egohos = EgoHos(device=f'cuda:{1 if n_gpus > 1 else 0}')
         # self.bbn_model.eval()
         self.detic_model.eval()
         self.egohos.eval()
@@ -389,8 +388,9 @@ class ObjectApp:
                         pbar.update()
                         # watch recipe changes
                         if sid == recipe_sid or sid == vocab_sid:
-                            print("recipe changed", recipe_id, '->', d, flush=True)
-                            return 
+                            if d.decode() != recipe_id:
+                                print("recipe changed", recipe_id, '->', d, flush=True)
+                                return 
 
                         # predict actions
                         preds = self.session.on_image(**holoframe.load(d))
