@@ -38,7 +38,7 @@ class StepsSession:
     decay = 0.5
     audio_sr = 24000
     emb_stride = 2
-    def __init__(self, model, vocab, id_vocab, step_mask, prefix=None):
+    def __init__(self, model, vocab, id_vocab, step_mask, temperature=0.3, prefix=None):
         self.model = model
         self.rgb_q = deque(maxlen=32)
         self.aud_q = deque(maxlen=16)
@@ -49,6 +49,7 @@ class StepsSession:
         self.step_mask = torch.Tensor(step_mask).int()
         self.sim_decay = 0
         prefix = f'{prefix or ""}omnimix'
+        self.temperature = temperature
 
         self.step_sid = f'{prefix}:step'
         self.step_id_sid = f'{prefix}:step:id'
@@ -131,7 +132,7 @@ class StepsSession:
         emb_rgbs = torch.stack([self.empty_rgb_emb]*(n_len - len(vq)) + list(vq), dim=1).to(device)
         emb_auds = torch.stack([self.empty_aud_emb]*(n_len - len(aq)) + list(aq), dim=1).to(device)
         steps, _ = self.model.mix(emb_rgbs, emb_auds)
-        steps = F.softmax(steps[0, self.step_mask], dim=-1)
+        steps = F.softmax(steps[0, self.step_mask] * self.temperature, dim=-1)
         return steps
 
 
@@ -422,7 +423,7 @@ class StepsApp:
         print(self.session.out_sids)
 
         pbar = tqdm.tqdm()
-        async with self.api.data_pull_connect([in_rgb_sid, in_aud_sid, recipe_sid, vocab_sid], ack=True) as ws_pull, \
+        async with self.api.data_pull_connect([in_rgb_sid, recipe_sid, vocab_sid], ack=True) as ws_pull, \
                    self.api.data_push_connect(self.session.out_sids, batch=True) as ws_push:
             with logging_redirect_tqdm():
                 while True:
@@ -432,20 +433,21 @@ class StepsApp:
                         pbar.update()
                         # watch recipe changes
                         if sid == recipe_sid or sid == vocab_sid:
-                            print("recipe changed", recipe_id, '->', d, flush=True)
-                            # self.start_session(recipe_id, prefix=prefix)
-                            return
+                            if d.decode() != recipe_id:
+                                print("recipe changed", recipe_id, '->', d, flush=True)
+                                # self.start_session(recipe_id, prefix=prefix)
+                                return
 
                         # predict actions
                         preds = None
                         if sid == in_rgb_sid:
                             preds = self.session.on_image(**holoframe.load(d))
-                        elif sid == in_aud_sid:
-                            preds = self.session.on_audio(**holoframe.load(d))
+                        #elif sid == in_aud_sid:
+                        #    preds = self.session.on_audio(**holoframe.load(d))
                         if preds is not None:
                             preds = {k: v for k, v in preds.items() if v is not None}
                             await ws_push.send_data(
-                                [jsondump({k: round(v, 2) for k, v in sorted(x.items(), key=lambda x: -x[1])}) for x in preds.values()], 
+                                [jsondump({k: round(v, 3) for k, v in sorted(x.items(), key=lambda x: -x[1])}) for x in preds.values()], 
                                 list(preds.keys()), 
                                 #[noconfliict_ts(t)]*len(preds)
                             )
