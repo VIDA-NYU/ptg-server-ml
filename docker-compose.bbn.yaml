@@ -11,7 +11,7 @@ services:
     network_mode: host
     environment:
       PTG_URL: http://localhost:7890 #$PTG_URL
-      ZMQ_ADDRESS: tcp://localhost:5555
+      ZMQ_ADDRESS: ${BBN_MSG_URL:-tcp://localhost:5555}
       #PTG_URL: $PTG_URL
       #ZMQ_ADDRESS: tcp://bbn_msgs_test:5555
       PYTHONUNBUFFERED: "1"
@@ -29,7 +29,7 @@ services:
       #PTG_URL: $PTG_URL
       #ZMQ_ADDRESS: tcp://bbn_ctl_test:5555
       PTG_URL: http://localhost:7890 #$PTG_URL
-      ZMQ_ADDRESS: tcp://localhost:5555
+      ZMQ_ADDRESS: ${BBN_CTL_URL:-tcp://localhost:5555}
       PYTHONUNBUFFERED: "1"
     restart: unless-stopped
 
