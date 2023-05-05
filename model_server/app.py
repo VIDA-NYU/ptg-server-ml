@@ -14,7 +14,7 @@ from fastapi import FastAPI, Query, File, UploadFile
 
 import ray
 
-# ray.init()
+# ray.init(namespace='models')
 
 from ray import serve
 # from ray.serve.gradio_integrations import GradioIngress
@@ -47,6 +47,7 @@ class ImageModel:
             return np.array(Image.open(BytesIO(data)))
         return holoframe.load(data)['image']
 
+    @torch.no_grad()
     def __call__(self, im, format, *a, **kw):
         return self.forward(self.load_image(im, format), *a, **kw)
 
@@ -54,11 +55,11 @@ class ImageModel:
         raise NotImplemented
 
 
-@serve.deployment(ray_actor_options={"num_gpus": detic_gpu})
+@serve.deployment(name='detic', ray_actor_options={"num_gpus": detic_gpu})
 class DeticModel(ImageModel):
     def __init__(self):
         from ptgprocess.detic import Detic
-        assert torch.cuda.is_available()
+        # assert torch.cuda.is_available()
         self.model = Detic(one_class_per_proposal=False, conf_threshold=0.3).cuda()
         self.model.eval()
 
@@ -71,7 +72,6 @@ class DeticModel(ImageModel):
     def set_vocab(self, name):
         pass
 
-    @torch.no_grad()
     def forward(self, im):
         im = im[:,:,::-1]
         outputs = self.model(im)
@@ -89,7 +89,7 @@ class DeticModel(ImageModel):
 
 
 
-@serve.deployment(ray_actor_options={"num_gpus": egovlp_gpu})
+@serve.deployment(name="egovlp", ray_actor_options={"num_gpus": egovlp_gpu})
 class EgoVLPModel(ImageModel):
     def __init__(self):
         from ptgprocess.egovlp import EgoVLP, get_predictor
@@ -99,7 +99,6 @@ class EgoVLPModel(ImageModel):
         self._get_predictor = get_predictor
         self.loaded_vocabs = {}
 
-    @torch.no_grad()
     def forward(self, im, recipe, as_dict=True):
         # encode video
         Z_images = self.model.encode_video(torch.stack([
@@ -121,15 +120,14 @@ class EgoVLPModel(ImageModel):
 
 
 
-@serve.deployment(ray_actor_options={"num_gpus": omnivore_gpu})
+@serve.deployment(name='omnivore', ray_actor_options={"num_gpus": 0.25})
 class OmnivoreModel(ImageModel):
     def __init__(self):
         from ptgprocess.omnivore import Omnivore
-        assert torch.cuda.is_available()
+        # assert torch.cuda.is_available()
         self.model = Omnivore().cuda()
         self.model.eval()
 
-    @torch.no_grad()
     def forward(self, ims, as_dict=True):
         # encode video
         ims = torch.stack([
@@ -147,7 +145,7 @@ class OmnivoreModel(ImageModel):
         return [verb, noun]
 
 
-@serve.deployment(ray_actor_options={"num_gpus": audio_sf_gpu})
+@serve.deployment(name="audio_slowfast", ray_actor_options={"num_gpus": audio_sf_gpu})
 class AudioSlowFastModel:
     def __init__(self):
         from ptgprocess.audio_slowfast import AudioSlowFast
@@ -171,14 +169,13 @@ class AudioSlowFastModel:
         return [verb, noun]
 
 
-@serve.deployment(ray_actor_options={"num_gpus": 0})
+@serve.deployment(name="bbn_yolo", ray_actor_options={"num_gpus": 0})
 class BBNYoloModel(ImageModel):
     def __init__(self):
         from ptgprocess.yolo import BBNYolo
-        self.model = BBNYolo()
+        self.model = BBNYolo(skill='tourniquet')
         # self.model.eval()
 
-    @torch.no_grad()
     def forward(self, im):
         im = im[:,:,::-1] # numpy array rgb->bgr, Image rgb
         outputs = self.model(im)
@@ -191,7 +188,23 @@ class BBNYoloModel(ImageModel):
         }
 
 
-@serve.deployment(ray_actor_options={"num_gpus": egohos_gpu})
+@serve.deployment(name="omnimix", ray_actor_options={"num_gpus": 0.25})
+class OmnimixModel:
+    def __init__(self):
+        from ptgprocess.omnimix import OmniGRU2
+        self.model = OmniGRU2()
+        # self.model.eval()
+
+    def forward(self, x, hidden):
+        z_omni, z_clip, z_patches = x
+        steps, hidden = self.model(x, hidden)
+        return {
+            'steps': steps, 
+            'hidden': hidden, 
+        }
+
+
+@serve.deployment(name="egohosbox", ray_actor_options={"num_gpus": egohos_gpu})
 class EgoHosBoxModel(ImageModel):
     def __init__(self, mode='obj1'):
         from ptgprocess.egohos import EgoHos
@@ -234,13 +247,14 @@ def boxnorm(xyxy, h, w):
 @serve.deployment
 @serve.ingress(app)
 class Server:
-    def __init__(self, detic, egohos, egovlp, omnivore, audio_sf, bbn_yolo, gio_serve):
+    def __init__(self, detic, egohos, egovlp, omnivore, audio_sf, bbn_yolo, omnimix, gio_serve):
         self.detic = detic
         self.egohos = egohos
         self.egovlp = egovlp
         self.omnivore = omnivore
         self.audio_sf = audio_sf
         self.bbn_yolo = bbn_yolo
+        self.omnimix = omnimix
         self.gio_serve = gio_serve
 
     # @app.get('/gio')
@@ -267,7 +281,14 @@ class Server:
         f = self.omnivore.remote(data, format)
         x = ray.get(await f)
         return x
-    
+
+    @app.post('/omnimix')
+    async def predict_omnimix(self, req: Request):
+        x, hidden = await req.body()
+        f = self.omnimix.remote(x, hidden)
+        x = ray.get(await f)
+        return x
+
     @app.post('/audio_slowfast')
     async def predict_audio_slowfast(self, audio: UploadFile, sr: int):
         data = await audio.read()
@@ -283,7 +304,7 @@ class Server:
     #     return x
 
     @app.post('/egovlp')
-    async def predict(
+    async def predict_egovlp(
         self, data: List[bytes] = File(),
         format: str=Query('img'), 
         recipe: str=Query('pinwheels', description='the recipe to predict'),
@@ -327,13 +348,14 @@ class Server:
 # def run():
 detic_model = None#DeticModel.bind()
 egohos_model = None#EgoHosBoxModel.bind()
-egovlp_model = EgoVLPModel.bind()
+egovlp_model = None#EgoVLPModel.bind()
 omnivore_model = OmnivoreModel.bind()
 bbn_yolo_model = BBNYoloModel.bind()
-audio_sf_model = AudioSlowFastModel.bind()
+audio_sf_model = None#AudioSlowFastModel.bind()
+omnimix = None#OmnimixModel.bind()
 gio_serve = None#MyGradioServer.bind(bbn_yolo_model)
 # server = Server.bind(detic_model, egohos_model, egovlp_model)
-server = Server.bind(detic_model, egohos_model, egovlp_model, omnivore_model, audio_sf_model, bbn_yolo_model, gio_serve)
+server = Server.bind(detic_model, egohos_model, egovlp_model, omnivore_model, audio_sf_model, bbn_yolo_model, omnimix, gio_serve)
     # serve.run(server)
 
 # from ray.serve.gradio_integrations import GradioIngress
