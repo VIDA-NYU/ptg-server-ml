@@ -1,0 +1,237 @@
+version: '3'
+
+services:
+  # ray_server:
+  #   image: model_server
+  #   build:
+  #     context: .
+  #     dockerfile: model_server/Dockerfile
+  #   container_name: ray_server
+  #   entrypoint: bash -c
+  #   command: 
+  #     - ray start --head --port=6379 --dashboard-host=0.0.0.0 --block
+  #   volumes:
+  #    - /dev/shm:/dev/shm
+  #    - ${VOLUMES}/models:/src/app/models
+  #    - ${VOLUMES}/models/cache:/root/.cache
+  #    - ${VOLUMES}/models/torch_iopath_cache:/root/.torch/iopath_cache
+  #   ports:
+  #    - 8265:8265
+  #   environment:
+  #     PYTHONPATH: "."
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             count: 1
+  #             capabilities: [gpu]
+  #   devices:
+  #    - /dev/nvidia0:/dev/nvidia0
+  #   #  - /dev/nvidia1:/dev/nvidia1
+
+  # model_server:
+  #   image: model_server
+  #   build:
+  #     context: .
+  #     dockerfile: model_server/Dockerfile
+  #   container_name: model_server
+  #   environment:
+  #     PTG_URL: $PTG_URL
+  #     RAY_ADDRESS: ray://ray_server:10001
+  #   volumes:
+  #     - /dev/shm:/dev/shm
+  #     - ${VOLUMES}/models:/src/app/models
+  #     - ${VOLUMES}/models/cache:/root/.cache
+  #     - ${VOLUMES}/models/torch_iopath_cache:/root/.torch/iopath_cache
+  #   restart: unless-stopped
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             count: 1
+  #             capabilities: [gpu]
+  #   devices:
+  #    - /dev/nvidia0:/dev/nvidia0
+  #   #  - /dev/nvidia1:/dev/nvidia1
+
+
+  perception:
+    image: perception
+    build:
+      context: .
+      dockerfile: perception/Dockerfile
+    container_name: perception
+    ports:
+      - 8265:8265
+    environment:
+      PTG_URL: $PTG_URL
+      PYTHONUNBUFFERED: "1"
+      # RAY_ADDRESS: ray://ray_server:10001
+    volumes:
+      - /dev/shm:/dev/shm
+      - ${VOLUMES}/models:/src/app/models
+      - ${VOLUMES}/models/cache:/root/.cache
+      - ${VOLUMES}/models/torch_iocache:/root/.torch/iopath_cache
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    devices:
+     - /dev/nvidia0:/dev/nvidia0
+
+  # omnimix:
+  #   image: omnimix
+  #   build:
+  #     context: .
+  #     dockerfile: steps/Dockerfile
+  #   container_name: omnimix
+  #   environment:
+  #     PTG_URL: $PTG_URL
+  #     PYTHON_UNBUFFERED: "1"
+  #   volumes:
+  #     - ${VOLUMES}/models:/src/app/models
+  #     - ${VOLUMES}/models/cache:/root/.cache
+  #     - ${VOLUMES}/models/torch_iocache:/root/.torch/iopath_cache
+  #   restart: unless-stopped
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             count: 1
+  #             capabilities: [gpu]
+  #   devices:
+  #    - /dev/nvidia0:/dev/nvidia0
+
+  # bbn_yolo:
+  #   image: bbn_yolo
+  #   build:
+  #     context: .
+  #     dockerfile: bbn_objects/Dockerfile
+  #   container_name: bbn_yolo
+  #   environment:
+  #     PTG_URL: $PTG_URL
+  #   volumes:
+  #     - ${VOLUMES}/models:/src/app/models
+  #     - ${VOLUMES}/models/cache:/root/.cache
+  #   restart: unless-stopped
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             count: 1
+  #             capabilities: [gpu]
+  #   devices:
+  #    - /dev/nvidia0:/dev/nvidia0
+
+  # detic:
+  #   image: detic
+  #   build:
+  #     context: .
+  #     dockerfile: detic/Dockerfile
+  #   container_name: detic
+  #   environment:
+  #     PTG_URL: $PTG_URL
+  #   volumes:
+  #     - ${VOLUMES}/models/cache:/root/.torch/iopath_cache/detic
+  #     - ${VOLUMES}/models/cache:/root/.cache
+  #     - ${VOLUMES}/models:/src/app/models
+  #     - ${VOLUMES}/recordings:/src/app/recordings
+  #   restart: unless-stopped
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             count: 2
+  #             capabilities: [gpu]
+  #   devices:
+  #    - /dev/nvidia0:/dev/nvidia0
+  #    - /dev/nvidia1:/dev/nvidia1
+  
+  # egovlp:
+  #   image: egovlp
+  #   build:
+  #     context: .
+  #     dockerfile: egovlp/Dockerfile
+  #   container_name: egovlp
+  #   #command: -c 'import time;time.sleep(600)'
+  #   volumes:
+  #     - ${VOLUMES}/models/cache:/root/.cache
+  #     - ${VOLUMES}/models:/src/app/models
+  #     - ${VOLUMES}/fewshot:/src/app/fewshot
+  #     - ${VOLUMES}/recordings:/src/app/recordings
+  #   environment:
+  #     LOCAL_RANK: '0'
+  #     PTG_URL: $PTG_URL
+  #   restart: unless-stopped
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             count: 1
+  #             capabilities: [gpu]
+  #   devices:
+  #    - /dev/nvidia0:/dev/nvidia0
+  
+  # # actionclip:
+  # #   image: actionclip
+  # #   build:
+  # #     context: .
+  # #     dockerfile: actionclip/Dockerfile
+  # #   container_name: actionclip
+  # #   volumes:
+  # #     - ${VOLUMES}/models/.cache:/root/.cache
+  # #     - ${VOLUMES}/models:/src/lib/ptgprocess/models
+  # #   restart: unless-stopped
+  # #   deploy:
+  # #     resources:
+  # #       reservations:
+  # #         devices:
+  # #           - driver: nvidia
+  # #             count: 1
+  # #             capabilities: [gpu]
+  # #   devices:
+  # #    - /dev/nvidia0:/dev/nvidia0
+  
+  # reasoning:
+  #   build: ./reasoning
+  #   container_name: reasoning
+  #   restart: unless-stopped
+  #   #command: -c 'import time;time.sleep(600)'
+  #   environment:
+  #     PTG_URL: $PTG_URL
+  #   volumes:
+  #     - ${VOLUMES}/models/reasoning:/src/app/models
+  #     - ${VOLUMES}/models/reasoning/nltk:/usr/share/nltk_data
+  #     - ${VOLUMES}/models/reasoning/spacy:/opt/conda/lib/python3.8/site-packages/en_core_web_lg
+  #   devices:
+  #    - /dev/nvidia0:/dev/nvidia0
+
+  # memory:
+  #   build: ./memory
+  #   container_name: memory
+  #   restart: unless-stopped
+  #   environment:
+  #     PTG_URL: $PTG_URL
+
+  # in3d:
+  #   build: ./in3d
+  #   container_name: in3d
+  #   restart: unless-stopped
+  #   environment:
+  #     PTG_URL: $PTG_URL
+
+# connect these containers to the server containers
+networks:
+  default:
+    name: ptg
+    external: true
