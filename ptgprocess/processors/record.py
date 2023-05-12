@@ -1,6 +1,7 @@
 from __future__ import annotations
 import os
 import glob
+import time
 import tqdm
 import asyncio
 import fnmatch
@@ -33,7 +34,7 @@ class BaseRecorder(Processor):
         if recording_id:
             return await self._call_async(recording_id, *a, **kw)
         recording_id = self.api.recordings.current()
-        if not recording_id:
+        while not recording_id:
             print("waiting for recording to be activated")
             self.recording_id = recording_id = await self._watch_recording_id(recording_id)
         print("Starting recording:", recording_id)
@@ -78,6 +79,8 @@ class BaseRecorder(Processor):
         raw = getattr(self.Writer, 'raw', False)
         raw_ts = getattr(self.Writer, 'raw_ts', False)
 
+        T0 = time.time()
+
 
         reader = StreamReader(
                     self.api, streams+[self.RECORDING_SID], recording_id=replay,
@@ -89,6 +92,8 @@ class BaseRecorder(Processor):
             async with reader:
                 async for sid, t, x in reader:
                     if sid == self.RECORDING_SID:
+                        if time.time() - T0 < 3 and recording_id == x.decode(): # HOTFIX: why does this happen?
+                            continue
                         print('\n'*3, "stopping recording", recording_id, x, '\n------------', flush=True)
                         break
 
