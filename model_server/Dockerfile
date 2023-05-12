@@ -21,4 +21,4 @@ ADD model_server/app.py .
 
 WORKDIR /src/app
 ENTRYPOINT ["bash"]
-CMD ["-c", "serve run app:server"]
+CMD ["-c", "serve run app:server --host 0.0.0.0"]

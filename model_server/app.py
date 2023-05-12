@@ -218,6 +218,59 @@ class EgoHosBoxModel(ImageModel):
         box = boxnorm(box, *im.shape[:2])
         return box
 
+
+@serve.deployment(ray_actor_options={"num_gpus": egohos_gpu})
+class ClipPatchModel(ImageModel):
+    def __init__(self, mode='obj1'):
+        import clip
+        self.device = torch.cuda.current_device()
+        self.model, self.transform = clip.load("ViT-B/16", device=self.device, jit=False)
+
+    def forward_patches(self, im, boxes):
+        X = self.transform(Image.fromarray(im))[None].to(self.device)
+        X = torch.stack([
+            self.transform(Image.fromarray(x)).to(device)
+            for x in [im] + extract_patches(im, boxes, (224,224))
+        ])
+        return self.model.encode_image(X)
+
+
+def extract_image_patch(image, bbox, patch_shape=None):
+    bbox = np.asarray(bbox)
+    if patch_shape is not None:
+        # correct aspect ratio to patch shape
+        target_aspect = float(patch_shape[1]) / patch_shape[0]
+        new_width = target_aspect * bbox[3]
+        bbox[0] -= (new_width - bbox[2]) / 2
+        bbox[2] = new_width
+
+    # convert to top left, bottom right
+    bbox[2:] += bbox[:2]
+    bbox = bbox.astype(int)
+
+    # clip at image boundaries
+    bbox[:2] = np.maximum(0, bbox[:2])
+    bbox[2:] = np.minimum(np.asarray(image.shape[:2][::-1]) - 1, bbox[2:])
+    if np.any(bbox[:2] >= bbox[2:]):
+        return None
+
+    # 
+    sx, sy, ex, ey = bbox
+    image = image[sy:ey, sx:ex]
+    return image
+
+
+def extract_patches(image, boxes, patch_shape=None):
+    patches = []
+    for box in boxes:
+        patch = extract_image_patch(image, box, patch_shape=patch_shape)
+        if patch is None:
+            print(f"WARNING: Failed to extract image patch: {box}.")
+            patch = np.random.uniform(0, 255, (*patch_shape, 3) if patch_shape else image.shape, dtype=np.uint8)
+        patches.append(patch)
+    return patches
+
+
 def boxnorm(xyxy, h, w):
     xyxy[:, 0] = (xyxy[:, 0]) / w
     xyxy[:, 1] = (xyxy[:, 1]) / h
@@ -247,7 +300,7 @@ def boxnorm(xyxy, h, w):
 @serve.deployment
 @serve.ingress(app)
 class Server:
-    def __init__(self, detic, egohos, egovlp, omnivore, audio_sf, bbn_yolo, omnimix, gio_serve):
+    def __init__(self, detic, egohos, egovlp, omnivore, audio_sf, bbn_yolo, omnimix, clip_patch, gio_serve):
         self.detic = detic
         self.egohos = egohos
         self.egovlp = egovlp
@@ -255,6 +308,7 @@ class Server:
         self.audio_sf = audio_sf
         self.bbn_yolo = bbn_yolo
         self.omnimix = omnimix
+        self.clip_patch = clip_patch
         self.gio_serve = gio_serve
 
     # @app.get('/gio')
@@ -272,6 +326,13 @@ class Server:
     async def predict_bbn_yolo(self, req: Request, format: str=Query('img')):
         data = await req.body()
         f = self.bbn_yolo.remote(data, format)
+        x = ray.get(await f)
+        return x
+
+    @app.post('/clip_patch')
+    async def predict_clip_patch(self, req: Request, format: str=Query('img')):
+        data = await req.body()
+        f = self.clip_patch.remote(data, format)
         x = ray.get(await f)
         return x
     
@@ -346,16 +407,22 @@ class Server:
 
 
 # def run():
-detic_model = None#DeticModel.bind()
-egohos_model = None#EgoHosBoxModel.bind()
+detic_model = DeticModel.bind()
+egohos_model = EgoHosBoxModel.bind()
 egovlp_model = None#EgoVLPModel.bind()
 omnivore_model = OmnivoreModel.bind()
 bbn_yolo_model = BBNYoloModel.bind()
-audio_sf_model = None#AudioSlowFastModel.bind()
+audio_sf_model = AudioSlowFastModel.bind()
 omnimix = None#OmnimixModel.bind()
+clip_patch_model = ClipPatchModel.bind()
 gio_serve = None#MyGradioServer.bind(bbn_yolo_model)
 # server = Server.bind(detic_model, egohos_model, egovlp_model)
-server = Server.bind(detic_model, egohos_model, egovlp_model, omnivore_model, audio_sf_model, bbn_yolo_model, omnimix, gio_serve)
+server = Server.bind(
+    detic_model, egohos_model, 
+    egovlp_model, omnivore_model, 
+    audio_sf_model, bbn_yolo_model, 
+    omnimix, clip_patch_model,
+    gio_serve)
     # serve.run(server)
 
 # from ray.serve.gradio_integrations import GradioIngress
