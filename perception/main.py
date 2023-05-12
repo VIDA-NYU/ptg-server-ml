@@ -99,6 +99,7 @@ class Perception:
         recipe_sid = f'{prefix or ""}event:recipe:id'
         vocab_sid = f'{prefix or ""}event:recipes'
 
+        t0 = time.time()
         async with self.api.data_pull_connect([in_sid, recipe_sid, vocab_sid], ack=True) as ws_pull:
             pbar = tqdm.tqdm()
             while True:
@@ -106,12 +107,20 @@ class Perception:
                 for sid, t, d in await ws_pull.recv_data():
                     pbar.set_description(f'read: {sid} {t}')
                     pbar.update()
-                    # watch recipe changes
-                    if sid == recipe_sid or sid == vocab_sid:
-                        print("recipe changed", recipe_id, '->', d, flush=True)
-                        return 
-                    queue.push([sid, t, holoframe_load(d)['image']])
-                    await asyncio.sleep(1e-2)
+                    try:
+                        # watch recipe changes
+                        if sid == recipe_sid or sid == vocab_sid:
+                            if time.time() - t0 < 3 and recipe_id == d.decode(): # HOTFIX: why does this happen?
+                                continue
+                            print("recipe changed", recipe_id, '->', d, flush=True)
+                            return 
+                        queue.push([sid, t, holoframe_load(d)['image']])
+                        await asyncio.sleep(1e-2)
+                    except Exception:
+                        import traceback
+                        traceback.print_exc()
+                        await asyncio.sleep(1e-1)
+
 
     async def processor(self, queue, out_queue):
         pbar = tqdm.tqdm()
@@ -131,7 +140,7 @@ class Perception:
             except Exception as e:
                 import traceback
                 traceback.print_exc()
-                raise
+                await asyncio.sleep(1e-1)
             finally:
                 queue.task_done()
 
@@ -147,6 +156,10 @@ class Perception:
                     # pbar.set_description(f'writer got {set(preds)} {timestamp}')
                     # pbar.update()
                     await ws_write_data_dict(ws_push, preds, timestamp)
+                except Exception as e:
+                    import traceback
+                    traceback.print_exc()
+                    await asyncio.sleep(1e-1)
                 finally:
                     queue.task_done()
     
