@@ -37,7 +37,7 @@ import numpy as np
 #     "Squeeze the frosting through the opening to apply small dollops of frosting to the plate",# in a circle around the base of the cake."
 # ])
 step_named_ids = np.array([
-    "OTHER",   # ADDED
+    "|OTHER",   # ADDED
     '|start',    
     '|end', 
 
@@ -242,7 +242,7 @@ RECIPES = {
     ],
 }
 
-common_labels = np.array(["OTHER"])
+common_labels = np.array(["|OTHER"])
 
 RECIPE_STEP_LABELS = {
     k: np.concatenate([np.array(v), common_labels])
