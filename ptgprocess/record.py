@@ -234,6 +234,47 @@ class CsvWriter(BaseWriter):
         return x
 
 
+class ParquetWriter(BaseWriter):
+    raw=True
+    def __init__(self, name, store_dir='', **kw):
+        super().__init__(**kw)
+        self.fname = os.path.join(store_dir, f'{name}.parquet')
+
+    def context(self, sample, t_start=None):
+        print("Opening csv file:", self.fname)
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+        self.read_table = lambda d: pq.read_table(pa.BufferReader(d))
+
+        table = self.read_table(sample)
+        writer = pq.ParquetWriter(self.fname, table.schema)
+        try:
+            self._w = writer
+            yield self
+        finally:
+            writer.close()
+            self.on_close(self.fname)
+
+    def write(self, data, ts):
+        self._w.write_table(self.read_table(data))
+
+    def format(self, x):
+        if isinstance(x, float):
+            return float(f'{x:.4f}')
+        return x
+
+    def on_close(self, fname):
+        return 
+
+
+
+class PointCloudWriter(ParquetWriter):
+    def on_close(self, fname):
+        from ptgprocess.voxelize import run
+        out_fname = os.path.join(os.path.dirname(fname), "voxelized-pointcloud.json")
+        run(fname, out_fname)
+
+
 class RawReader:
     reader = None
     def __init__(self, src):

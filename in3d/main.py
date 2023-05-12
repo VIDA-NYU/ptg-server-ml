@@ -70,7 +70,7 @@ class In3DApp:
 
         in_sids = ['main', 'depthlt', 'depthltCal']
         obj_sid = 'detic:image:for3d'
-        out_sids = ['pointcloud', 'detic:world']
+        out_sids = ['pointcloud:v2', 'detic:world']
         skipped_labels = {'person'}
 
         pbar = tqdm.tqdm()
@@ -142,17 +142,38 @@ class In3DApp:
                         hist[depthlt['_tms']] = depthlt
 
                         # write point cloud
+                        # await ws_push.send_data([
+                        #     jsondump({
+                        #         'time': dts,
+                        #         'color': pts3d.rgb,
+                        #         'xyz_world': pts3d.xyz_depth_world,
+                        #     }),
+                        # ], ['pointcloud'], [dts])
+
                         dts = depthlt['_t']
+                        x, y, z = pts3d.xyz_depth_world.T
+                        r, g, b = pts3d.rgb.T
                         await ws_push.send_data([
-                            jsondump({
-                                'time': dts,
-                                'color': pts3d.rgb,
-                                'xyz_world': pts3d.xyz_depth_world,
+                            pqdump({
+                                'time': [int(dts.split('-')[0])]*len(x),
+                                "x": x,
+                                "y": y,
+                                "z": z,
+                                "r": r,
+                                "g": g,
+                                "b": b,
                             }),
-                        ], ['pointcloud'], [dts])
+                        ], ['pointcloudv2'], [dts])
                         
 
+import pyarrow as pa
+import pyarrow.parquet as pq
 
+def pqdump(data):
+    table = pa.table(data)
+    buf = pa.BufferOutputStream()
+    pq.write_table(table, buf)
+    return buf.getvalue().to_pybytes()
 
 def jsondump(data):
     return orjson.dumps(data, option=orjson.OPT_NAIVE_UTC | orjson.OPT_SERIALIZE_NUMPY)

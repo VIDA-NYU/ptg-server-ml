@@ -11,7 +11,7 @@ import numpy as np
 
 from .core import Processor
 from ..util import StreamReader, Context
-from ..record import BaseWriter, RawWriter, VideoWriter, AudioWriter, JsonWriter, RawReader
+from ..record import BaseWriter, RawWriter, VideoWriter, AudioWriter, JsonWriter, ParquetWriter, RawReader, PointCloudWriter
 
 
 
@@ -228,12 +228,27 @@ class JsonRecorder(BaseRecorder):
         'pointcloud': {'max_fps': 1/3}
     }
 
+class ParquetRecorder(BaseRecorder):
+    Writer = ParquetWriter
+    ext = '.parquet'
+    STREAMS = [
+        'pointcloudv2',
+    ]
+
+class PointCloudRecorder(BaseRecorder):
+    Writer = PointCloudWriter
+    ext = '.parquet'
+    STREAMS = [
+        'pointcloudv2',
+    ]
 
 if __name__ == '__main__':
     import fire
     fire.Fire({
         'video': VideoRecorder,
         'audio': AudioRecorder,
+        'parquet': ParquetRecorder,
+        'pointcloud': PointCloudRecorder,
         'json': JsonRecorder,
         'raw': RawRecorder,
     })
