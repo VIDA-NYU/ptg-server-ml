@@ -113,11 +113,12 @@ class ReasoningApp:
 
                     elif sid == steps_sid:  # A call sending detected steps
                         detected_steps = orjson.loads(data)
-                        detected_steps = {int(k.split('|')[0]) - 1: v for k, v in detected_steps.items()}
+                        detected_steps = {int(k.split('|')[0] or -1) - 1: v for k, v in detected_steps.items()}
                         logger.info(f'Perception steps: {str(detected_steps)}')
-
+                    
                     #if detected_objects is not None and detected_actions is not None and detected_steps is not None:
-                    if detected_objects is not None and detected_steps is not None:
+                    #if detected_objects is not None and detected_steps is not None:
+                    if detected_steps is not None:
                         recipe_status = self.state_manager.check_status(detected_actions, detected_objects, detected_steps)
                         logger.info(f'Reasoning outputs: {str(recipe_status)}')
                         if recipe_status is not None:
