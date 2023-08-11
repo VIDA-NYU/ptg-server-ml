@@ -60,6 +60,9 @@ class Message(dict):
             for i in range(step_id+1, len(steps)):
                 steps[i]['state'] = 'unobserved'
 
+    def update_steps_state(self, steps):
+        steps = self['users current actions right now']['steps'] = steps
+
     def update_errors(self, error_desc):
         self['current errors']['errors'] = [error_desc] if error_desc else []
 
