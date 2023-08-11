@@ -45,7 +45,7 @@ class Perception:
                 while not recipe_id:
                     print("waiting for recipe to be activated")
                     recipe_id = await self._watch_recipe_id(recipe_id)
-                
+                                   
                 print("Starting recipe:", recipe_id)
                 await self.run_recipe(recipe_id, *a, **kw)
             except RecipeExit as e:
@@ -60,6 +60,7 @@ class Perception:
         async with self.api.data_pull_connect('event:recipe:id') as ws:
             while True:
                 for sid, ts, data in (await ws.recv_data()):
+                    print(sid, ts, data, recipe_id)
                     if data != recipe_id:
                         return data
 
@@ -110,7 +111,7 @@ class Perception:
                     try:
                         # watch recipe changes
                         if sid == recipe_sid or sid == vocab_sid:
-                            if time.time() - t0 < 3 and recipe_id == d.decode(): # HOTFIX: why does this happen?
+                            if time.time() - t0 < 1 and recipe_id == d.decode(): # HOTFIX: why does this happen?
                                 continue
                             print("recipe changed", recipe_id, '->', d, flush=True)
                             return 

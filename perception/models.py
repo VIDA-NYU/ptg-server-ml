@@ -60,9 +60,11 @@ class AllInOneModel:
 
     @torch.no_grad()
     def forward(self, ims_bgr, hidden):
-        ims_rgb = [im_bgr[:,:,::-1] for im_bgr in ims_bgr]
+        # ims_rgb = [im_bgr[:,:,::-1] for im_bgr in ims_bgr]
+        # im_rgb = ims_rgb[-1]
         im_bgr = ims_bgr[-1]
-        im_rgb = ims_rgb[-1]
+
+        omni_input = {}
 
         # get action embeddings
         X = torch.stack([
@@ -70,30 +72,36 @@ class AllInOneModel:
         ], dim=1).cuda()[None]
         z_omni = self.omni_model.model(X, input_type="video")
 
+        omni_input['rgb'] = z_omni[None].float()
+
         # get bounding boxes
         outputs = self.yolo_model(im_bgr)
         boxes = outputs[0].boxes
 
         # get clip patches
-        X = torch.stack([
-            self.clip_transform(Image.fromarray(x)).to(self.device)
-            for x in [im_bgr] + extract_patches(im_bgr, boxes.xywh.cpu().numpy(), (224,224))
-        ])
-        z_clip = self.clip_model.encode_image(X)
+        if self.mix_model.use_objects:
+            X = torch.stack([
+                self.clip_transform(Image.fromarray(x)).to(self.device)
+                for x in [im_bgr] + extract_patches(im_bgr, boxes.xywh.cpu().numpy(), (224,224))
+            ])
+            z_clip = self.clip_model.encode_image(X)
 
-        # concatenate with boxes
-        z_clip_frame = torch.cat([z_clip[:1], torch.tensor([[0, 0, 1, 1, 1]]).to(self.device)], axis=1)
-        z_clip_patch = torch.cat([z_clip[1:], boxes.xywhn, boxes.conf[:, None]], axis=1)
-        # pad boxes to size
-        z_clip_patch_pad = torch.zeros(
-            (max(self.MAX_OBJECTS - z_clip_patch.shape[0], 0), 
-             z_clip_patch.shape[1])).to(self.device)
-        z_clip_patch = torch.cat([z_clip_patch, z_clip_patch_pad])[:self.MAX_OBJECTS]
+            # concatenate with boxes
+            z_clip_frame = torch.cat([z_clip[:1], torch.tensor([[0, 0, 1, 1, 1]]).to(self.device)], axis=1)
+            z_clip_patch = torch.cat([z_clip[1:], boxes.xywhn, boxes.conf[:, None]], axis=1)
+            # pad boxes to size
+            z_clip_patch_pad = torch.zeros(
+                (max(self.MAX_OBJECTS - z_clip_patch.shape[0], 0), 
+                z_clip_patch.shape[1])).to(self.device)
+            z_clip_patch = torch.cat([z_clip_patch, z_clip_patch_pad])[:self.MAX_OBJECTS]
+
+            omni_input['objs'] = z_clip_patch[None,None].float()
+            omni_input['frame'] = z_clip_frame[None].float()
 
         # get mixin
-        x = z_omni[None].float(), z_clip_frame[None].float(), z_clip_patch[None,None].float()
-        steps, hidden = self.mix_model(x, hidden)
-        steps = torch.softmax(steps[0,0,:-2], dim=-1)
+        # x = z_omni[None].float(), z_clip_frame[None].float(), z_clip_patch[None,None].float()
+        steps, hidden = self.mix_model(h=hidden, **omni_input)
+        steps = torch.softmax(steps[0,-1,:-2], dim=-1)
 
         # prepare objects
         boxes = boxes.cpu()

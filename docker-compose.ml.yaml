@@ -2,16 +2,67 @@ version: '3'
 
 services:
 
-  omnimix:
-    image: omnimix
+  # omnimix:
+  #   image: omnimix
+  #   build:
+  #     context: .
+  #     dockerfile: steps/Dockerfile
+  #   container_name: omnimix
+  #   environment:
+  #     PTG_URL: $PTG_URL
+  #   volumes:
+  #     - ${VOLUMES}/models:/src/app/models
+  #     - ${VOLUMES}/models/cache:/root/.cache
+  #     - ${VOLUMES}/models/torch_iocache:/root/.torch/iopath_cache
+  #   restart: unless-stopped
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             count: 1
+  #             capabilities: [gpu]
+  #   devices:
+  #    - /dev/nvidia1:/dev/nvidia0
+  #     #- /dev/nvidia1:/dev/nvidia1
+
+  # bbn_objects:
+  #   image: bbn_objects
+  #   build:
+  #     context: .
+  #     dockerfile: bbn_objects/Dockerfile
+  #   container_name: bbn_objects
+  #   environment:
+  #     PTG_URL: $PTG_URL
+  #   volumes:
+  #     - ${VOLUMES}/models:/src/app/models
+  #     - ${VOLUMES}/models/cache:/root/.cache
+  #   restart: unless-stopped
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             count: 2
+  #             capabilities: [gpu]
+  #   devices:
+  #    - /dev/nvidia0:/dev/nvidia0
+  #    - /dev/nvidia1:/dev/nvidia1
+
+  perception:
+    image: perception
     build:
       context: .
-      dockerfile: steps/Dockerfile
-    container_name: omnimix
+      dockerfile: perception/Dockerfile
+    container_name: perception
+    ports:
+      - 8265:8265
     environment:
       PTG_URL: $PTG_URL
       PYTHONUNBUFFERED: "1"
+      # RAY_ADDRESS: ray://ray_server:10001
     volumes:
+      - /dev/shm:/dev/shm
       - ${VOLUMES}/models:/src/app/models
       - ${VOLUMES}/models/cache:/root/.cache
       - ${VOLUMES}/models/torch_iocache:/root/.torch/iopath_cache
@@ -24,31 +75,7 @@ services:
               count: 1
               capabilities: [gpu]
     devices:
-     - /dev/nvidia1:/dev/nvidia0
-      #- /dev/nvidia1:/dev/nvidia1
-
-  bbn_objects:
-    image: bbn_objects
-    build:
-      context: .
-      dockerfile: bbn_objects/Dockerfile
-    container_name: bbn_objects
-    environment:
-      PTG_URL: $PTG_URL
-    volumes:
-      - ${VOLUMES}/models:/src/app/models
-      - ${VOLUMES}/models/cache:/root/.cache
-    restart: unless-stopped
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 2
-              capabilities: [gpu]
-    devices:
      - /dev/nvidia0:/dev/nvidia0
-     - /dev/nvidia1:/dev/nvidia1
 
   # detic:
   #   image: detic
