@@ -10,6 +10,7 @@ services:
     container_name: omnimix
     environment:
       PTG_URL: $PTG_URL
+      PYTHONUNBUFFERED: "1"
     volumes:
       - ${VOLUMES}/models:/src/app/models
       - ${VOLUMES}/models/cache:/root/.cache
@@ -134,17 +135,47 @@ services:
     devices:
      - /dev/nvidia0:/dev/nvidia0
 
-  memory:
-    build: ./memory
-    container_name: memory
-    restart: unless-stopped
-    environment:
-      PTG_URL: $PTG_URL
+  # memory:
+  #   build: ./memory
+  #   container_name: memory
+  #   restart: unless-stopped
+  #   environment:
+  #     PTG_URL: $PTG_URL
 
   in3d:
     build: ./in3d
     container_name: in3d
     restart: unless-stopped
+    environment:
+      PTG_URL: $PTG_URL
+
+
+  3d-memory:
+    build: ./3d-memory
+    container_name: 3d-memory
+    command: main.py mem run
+    restart: unless-stopped
+    volumes:
+      - ${VOLUMES}/models:/src/app/hand_object_detector/models
+    environment:
+      PTG_URL: $PTG_URL
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    devices:
+     - /dev/nvidia1:/dev/nvidia1
+
+  3d-memory-sync:
+    build: ./3d-memory
+    container_name: 3d-memory-sync
+    command: main.py sync run
+    restart: unless-stopped
+    volumes:
+      - ${VOLUMES}/models:/src/app/hand_object_detector/models
     environment:
       PTG_URL: $PTG_URL
 

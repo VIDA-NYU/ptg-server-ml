@@ -21,7 +21,7 @@ ADD steps/requirements.txt .
 RUN pip install -r requirements.txt
 
 ADD ptgprocess/ $DIR/ptgprocess/
-ADD steps/main.py .
+ADD steps/*.py ./
 
 #ENTRYPOINT ["bash"]
 CMD ["main.py", "run"]

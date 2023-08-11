@@ -15,4 +15,7 @@
 	url = git@github.com:beasteers/auditory-slow-fast.git
 [submodule "ptgprocess/procedural_step_recog"]
 	path = ptgprocess/procedural_step_recog
-	url = git@github.com:iranroman/procedural_step_recog.git
+	url = https://github.com/beasteers/procedural_step_recog.git
+[submodule "3d-memory/3d-memory"]
+	path = 3d-memory/3d-memory
+	url = git@github.com:VIDA-NYU/3d-memory.git

@@ -12,3 +12,4 @@ timm
 torchvision
 torchaudio
 pandas
+gdown
