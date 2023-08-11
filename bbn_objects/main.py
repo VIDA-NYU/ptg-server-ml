@@ -327,7 +327,7 @@ class ObjectApp:
         while True:
             try:
                 recipe_id = self.api.session.current_recipe()
-                while not recipe_id:
+                while not recipe_id: # or recipe_id == 'tourniquet':
                     print("waiting for recipe to be activated")
                     recipe_id = await self._watch_recipe_id(recipe_id)
                 
@@ -340,7 +340,8 @@ class ObjectApp:
                 traceback.print_exc()
                 await asyncio.sleep(5)
 
-    async def _watch_recipe_id(self, recipe_id):
+    async def _watch_recipe_id(self, recipe_id=None):
+        recipe_id = recipe_id or b''
         async with self.api.data_pull_connect('event:recipe:id') as ws:
             while True:
                 for sid, ts, data in (await ws.recv_data()):
