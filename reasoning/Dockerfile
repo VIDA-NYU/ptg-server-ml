@@ -1,4 +1,15 @@
-FROM ptgctl:gpu
+FROM pytorch/pytorch:2.1.0-cuda11.8-cudnn8-runtime
+# RUN rm /etc/apt/sources.list.d/cuda.list
+# RUN rm /etc/apt/sources.list.d/nvidia-ml.list
+ARG DEBIAN_FRONTEND=noninteractive
+ENV TZ="America/New_York"
+
+WORKDIR /src/app
+RUN apt-get update && apt-get install -y python3-opencv git && rm -rf /var/lib/apt/lists/*
+RUN apt-get -q update && \
+   apt-get install -y build-essential pkg-config \
+   && rm -rf /var/lib/apt/lists/*
+RUN pip install --no-cache-dir git+https://github.com/VIDA-NYU/ptgctl.git
 
 MAINTAINER "rlopez@nyu.edu"
 
@@ -12,7 +23,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Download extra resources
 RUN python -m spacy download en_core_web_lg
-RUN python -c "import nltk;nltk.download('punkt')"
+# RUN python -c "import nltk;nltk.download('punkt')"
 ADD tim-reasoning tim-reasoning
 RUN pip install ./tim-reasoning
 
@@ -20,4 +31,5 @@ ADD main.py .
 #ADD entrypoint.sh .
 
 #ENTRYPOINT "/src/app/entrypoint.sh"
+ENTRYPOINT ["python"]
 CMD ["main.py", "run" ]
