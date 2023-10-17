@@ -56,13 +56,17 @@ services:
       context: .
       dockerfile: perception/Dockerfile
     container_name: perception
+    ports:
+      - 8265:8265
     # entrypoint: ['sh', '-c']
     # command: 
     # - sleep 100000000
     environment:
       PTG_URL: $PTG_URL
       MODEL_DIR: /src/app/models
+      PYTHONUNBUFFERED: "1"
     volumes:
+      - /dev/shm:/dev/shm
       - ${VOLUMES}/models:/src/app/models
       - ${VOLUMES}/models/cache:/root/.cache
       - ${VOLUMES}/models/torch_iocache:/root/.torch/iopath_cache

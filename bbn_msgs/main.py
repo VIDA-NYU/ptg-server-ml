@@ -26,8 +26,11 @@ class MsgSession:
         self.steps = {}
         self.message = yaml_messages.Message(skill_id, errors=True)
 
-    def on_reasoning_step(self, data):        
-        self.message.update_step(data['step_id'])
+    def on_reasoning_step(self, data):   
+        if 'all_steps' not in data:
+            return
+        self.message.update_steps_state(data['all_steps'])
+        #self.message.update_step(data['step_id'])
         self.message.update_errors(data['error_description'] if data['error_status'] else False)
         return str(self.message)
 
@@ -92,7 +95,10 @@ class MsgApp:
                         out_msg = self.handle_control_message(response)
                     except Exception as e:
                         out_msg = str(e)
-                    socket.send_string(f"{name}:{out_msg or 'OK'}", flags=zmq.DONTWAIT)
+                        print("Error:", out_msg)
+                    msg = f"{name}:{out_msg or 'OK'}"
+                    print('msg:', msg)
+                    socket.send_string(msg, flags=zmq.DONTWAIT)
                 time.sleep(.5)
         finally:
             socket.close()
@@ -165,6 +171,7 @@ class MsgApp:
         async with self.api.data_pull_connect('event:recipe:id') as ws:
             while True:
                 for sid, ts, data in (await ws.recv_data()):
+                    print(sid, ts, data, recipe_id)
                     if data != recipe_id:
                         return data
 
