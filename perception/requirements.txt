@@ -15,9 +15,11 @@ torchvision
 torchaudio
 pandas
 
-ultralytics
+opencv-python
 git+https://github.com/openai/CLIP.git
 orjson
 tqdm
 
 ray
+
+lancedb
