@@ -3,3 +3,4 @@ opencv-python
 orjson
 tqdm
 pyarrow
+git+https://github.com/VIDA-NYU/ptgctl.git

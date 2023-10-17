@@ -5,6 +5,18 @@ import logging
 import ptgctl
 import ptgctl.util
 from os.path import join
+
+import nltk
+import spacy
+MODEL_DIR = os.getenv('MODEL_DIR') or 'models'
+NLTK_DIR = os.path.join(MODEL_DIR, 'nltk')
+# SPACY_DIR = os.path.join(MODEL_DIR, 'spacy')
+# spacy.util.set_data_path(SPACY_DIR)
+nltk.data.path.append(NLTK_DIR)
+
+nltk.download('punkt', download_dir=NLTK_DIR)
+# spacy.cli.download("en_core_web_lg")
+
 from tim_reasoning import StateManager
 
 logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(name)s:%(message)s')

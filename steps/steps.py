@@ -41,7 +41,7 @@ import numpy as np
 # ])
 
 recipes = {
-    'tortilla': [
+    'pinwheels': [
         "1|place tortilla",
         "2|scoop and spread nut butter",
         "3|clean knife",
