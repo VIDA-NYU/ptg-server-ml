@@ -55,6 +55,7 @@ services:
     build:
       context: .
       dockerfile: perception/Dockerfile
+    shm_size: 1gb
     container_name: perception
     ports:
       - 8265:8265

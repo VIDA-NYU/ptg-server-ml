@@ -13,7 +13,7 @@ from tqdm.contrib.logging import logging_redirect_tqdm
 import numpy as np
 import torch
 
-# import ray
+import ray
 import asyncio_graph as ag
 
 import functools
@@ -23,7 +23,7 @@ from ptgctl.util import parse_epoch_time
 
 from object_states.inference import Perception
 
-# ray.init(num_gpus=1)
+ray.init(num_gpus=1)
 
 from steps_list import RECIPE_STEP_LABELS, RECIPE_STEP_IDS
 
@@ -41,11 +41,11 @@ class APIEvents:
     def add_callback(self, stream_id, func):
         self.callbacks[stream_id].append(func)
 
-    def __call__(self, stream_id, message, timestamp, **kw):
+    async def __call__(self, stream_id, message, timestamp, **kw):
         all_messages = {}
-        for f in self.callbacks[stream_id]:
-            out = f(message, timestamp, **kw)
-            all_messages.update(out or {})
+        results = await asyncio.gather(*(f(message, timestamp, **kw) for f in self.callbacks[stream_id]))
+        for r in results:
+            all_messages.update(r or {})
         return all_messages
 
 
@@ -75,7 +75,7 @@ class APILoop:
                     pbar.update()
                     try:
                         queue.push([sid, t, d])
-                        await asyncio.sleep(1e-6)
+                        await asyncio.sleep(0.05)
                     except Exception:
                         import traceback
                         traceback.print_exc()
@@ -87,13 +87,14 @@ class APILoop:
             pbar.set_description('processor waiting for data...')
             sid, t, d = await queue.get()
             try:
-                pbar.set_description(f'processor got {sid} {t}')
-                pbar.update()
+                xs = queue.read_buffer()
+                pbar.set_description(f'processor got {sid} {t} {len(xs)}')
                 # predict actions
-                for sid, t, d in queue.read_buffer():
-                    preds = self.events(sid, d, t)
+                for sid, t, d in xs:
+                    pbar.update()
+                    preds = await self.events(sid, d, t)
                     if preds:
-                        out_queue.push([preds, t])
+                        out_queue.push([preds, '*'])
             except Exception as e:
                 import traceback
                 traceback.print_exc()
@@ -165,12 +166,9 @@ VOCAB = {
     }
 }
 
-
-class PerceptionApp:
-    def __init__(self, vocab=VOCAB, state_db='v0', detect_every=0.5, **kw):
-        self.api = ptgctl.API(username=os.getenv('API_USER') or 'perception',
-                              password=os.getenv('API_PASS') or 'perception')
-        self.loop = APILoop(self.api, ['main'], ['detic:image'])
+@ray.remote(num_gpus=1)
+class PerceptionAgent:
+    def __init__(self, vocab, state_db, detect_every):
         self.perception = Perception(
             vocabulary=vocab,
             state_db_fname=state_db,
@@ -181,18 +179,29 @@ class PerceptionApp:
             # clip_device='cuda:1',
         )
 
-        self.loop.events.add_callback('main', self.on_image)
-        self.loop.events.add_callback('task:control', self.on_control)
-
-    def on_image(self, message, timestamp):
-        frame = holoframe_load(message)['image']
-        timestamp = parse_epoch_time(timestamp)
+    def predict(self, frame, timestamp):
+        t0 = time.time()
         track_detections, frame_detections, hoi_detections = self.perception.predict(frame, timestamp)
         return {
             "detic:image": self.perception.serialize_detections(track_detections, frame.shape),
         }
 
-    def on_control(self, message, timestamp):
+class PerceptionApp:
+    def __init__(self, vocab=VOCAB, state_db='v0', detect_every=1, **kw):
+        self.api = ptgctl.API(username=os.getenv('API_USER') or 'perception',
+                              password=os.getenv('API_PASS') or 'perception')
+        self.loop = APILoop(self.api, ['main'], ['detic:image'])
+        self.agent = PerceptionAgent.remote(vocab, state_db, detect_every)
+
+        self.loop.events.add_callback('main', self.on_image)
+        self.loop.events.add_callback('task:control', self.on_control)
+
+    async def on_image(self, message, timestamp):
+        frame = holoframe_load(message)['image'][:,:,::-1]
+        timestamp = parse_epoch_time(timestamp)
+        return await self.agent.predict.remote(frame, timestamp)
+
+    async def on_control(self, message, timestamp):
         # self.perception.detector.xmem.clear_memory()
         pass
 
@@ -235,7 +244,7 @@ def as_v1_objs(xyxy, confs, class_ids, labels, conf_threshold=0.1):
 
 
 def noconflict_ts(ts):
-    return ts.split('-')[0] + '-*'
+    return '*' if ts == '*' else ts.split('-')[0] + '-*'
 
 
 def jsondump(data):

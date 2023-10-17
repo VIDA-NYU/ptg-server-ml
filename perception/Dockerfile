@@ -29,8 +29,8 @@ RUN pip install -r requirements.txt
 
 ADD perception/object-states/setup.py perception/object-states/README.md ./object-states/
 ADD perception/object-states/object_states/__init__.py ./object-states/object_states/
-ADD perception/object-states ./object-states
 RUN pip install --no-cache-dir -e ./object-states
+ADD perception/object-states ./object-states
 
 
 
