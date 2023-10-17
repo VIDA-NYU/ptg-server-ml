@@ -19,3 +19,15 @@
 [submodule "3d-memory/3d-memory"]
 	path = 3d-memory/3d-memory
 	url = git@github.com:VIDA-NYU/3d-memory.git
+[submodule "perception/XMem"]
+	path = perception/XMem
+	url = https://github.com/beasteers/XMem
+[submodule "perception/object-states"]
+	path = perception/object-states
+	url = git@github.com:VIDA-NYU/object-states.git
+[submodule "perception/Detic"]
+	path = perception/Detic
+	url = git@github.com:beasteers/Detic.git
+[submodule "perception/EgoHOS"]
+	path = perception/EgoHOS
+	url = git@github.com:beasteers/EgoHOS.git
