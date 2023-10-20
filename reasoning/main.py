@@ -1,4 +1,5 @@
 import os
+import nltk
 import orjson
 import asyncio
 import logging
@@ -6,15 +7,20 @@ import ptgctl
 import ptgctl.util
 from tim_reasoning import SessionManager
 
-logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(name)s:%(message)s')
-logger = logging.getLogger(__name__)
 
+MODEL_DIR = os.getenv('MODEL_DIR') or 'models'
+NLTK_DIR = os.path.join(MODEL_DIR, 'nltk')
+nltk.data.path.append(NLTK_DIR)
+nltk.download('punkt', download_dir=NLTK_DIR)
 
 RECIPE_SID = 'event:recipe:id'
 SESSION_SID = 'event:session:id'
 OBJECT_STATES_SID = 'detic:image'
 UPDATE_STEP_SID = 'event:recipe:step'
 REASONING_STATUS_SID = 'reasoning:check_status'
+
+logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(name)s:%(message)s')
+logger = logging.getLogger(__name__)
 
 
 class ReasoningApp:
