@@ -59,7 +59,7 @@ async def error_handler(func, *a, __retry_every=5, **kw):
 
 
 class SlidingQueue(asyncio.Queue):
-    def __init__(self, maxsize=1, buffersize=8):
+    def __init__(self, maxsize=1, buffersize=2):
         self.buffersize = buffersize
         super().__init__(maxsize)
 
@@ -72,7 +72,9 @@ class SlidingQueue(asyncio.Queue):
         self._buffer.append(item)
 
     def read_buffer(self):
-        return list(self._buffer)
+        xs = list(self._buffer)
+        self._buffer.clear()
+        return xs
     
     def push(self, item):
         full = self.full()

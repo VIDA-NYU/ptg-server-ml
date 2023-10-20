@@ -32,7 +32,7 @@ ADD perception/object-states/object_states/__init__.py ./object-states/object_st
 RUN pip install --no-cache-dir -e ./object-states
 ADD perception/object-states ./object-states
 
-
+RUN pip install --no-cache-dir git+https://github.com/beasteers/redis-record.git
 
 # ADD ptgprocess/ $DIR/ptgprocess/
 ADD perception/*.py ./

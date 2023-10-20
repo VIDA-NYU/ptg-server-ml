@@ -10,6 +10,7 @@ import orjson
 import tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
 
+import cv2
 import numpy as np
 import torch
 
@@ -83,18 +84,27 @@ class APILoop:
 
     async def processor(self, queue, out_queue):
         pbar = tqdm.tqdm()
+        t0 = None
         while True:
             pbar.set_description('processor waiting for data...')
             sid, t, d = await queue.get()
+            xs = [(sid, t, d)]
             try:
-                xs = queue.read_buffer()
-                pbar.set_description(f'processor got {sid} {t} {len(xs)}')
+                # xs = queue.read_buffer()
+                xs = sorted(xs, key=lambda x: x[1])
                 # predict actions
+                if t0 is None and xs:
+                    t0 = parse_epoch_time(xs[0][1])
                 for sid, t, d in xs:
+                    t1 = parse_epoch_time(t)
+                    if t1 < t0:
+                        continue
+                    pbar.set_description(f'processor got {sid} {t} {t1-t0:.3f} {len(xs)}')
                     pbar.update()
                     preds = await self.events(sid, d, t)
                     if preds:
-                        out_queue.push([preds, '*'])
+                        out_queue.push([preds, t])
+                    t0 = t1
             except Exception as e:
                 import traceback
                 traceback.print_exc()
@@ -183,11 +193,12 @@ class PerceptionAgent:
         t0 = time.time()
         track_detections, frame_detections, hoi_detections = self.perception.predict(frame, timestamp)
         return {
-            "detic:image": self.perception.serialize_detections(track_detections, frame.shape),
+            "detic:image": self.perception.serialize_detections(track_detections, frame.shape, include_mask=True),
+            # "detic:image": self.perception.serialize_detections(track_detections, frame.shape),
         }
 
 class PerceptionApp:
-    def __init__(self, vocab=VOCAB, state_db='v0', detect_every=1, **kw):
+    def __init__(self, vocab=VOCAB, state_db='v0', detect_every=0.5, **kw):
         self.api = ptgctl.API(username=os.getenv('API_USER') or 'perception',
                               password=os.getenv('API_PASS') or 'perception')
         self.loop = APILoop(self.api, ['main'], ['detic:image'])
@@ -197,9 +208,27 @@ class PerceptionApp:
         self.loop.events.add_callback('task:control', self.on_control)
 
     async def on_image(self, message, timestamp):
-        frame = holoframe_load(message)['image'][:,:,::-1]
-        timestamp = parse_epoch_time(timestamp)
-        return await self.agent.predict.remote(frame, timestamp)
+        d = holoframe_load(message)
+        frame = d['image'][:,:,::-1]
+        H = 480
+        h, w = frame.shape[:2]
+        small_frame = cv2.resize(frame, (int(w*H/h), H))
+        ts = parse_epoch_time(timestamp)
+        outputs = await self.agent.predict.remote(small_frame, ts)
+
+        image_params = {
+            'shape': frame.shape,
+            'focal': [d['focalX'], d['focalY']],
+            'principal': [d['principalX'], d['principalY']],
+            'cam2world': d['cam2world'].tolist(),
+        }
+        outputs['detic:image:for3d'] = {
+            'objects': outputs['detic:image'],
+            'image': image_params,
+            'epoch_timestamp': ts,
+            'timestamp': timestamp,
+        }
+        return outputs
 
     async def on_control(self, message, timestamp):
         # self.perception.detector.xmem.clear_memory()
