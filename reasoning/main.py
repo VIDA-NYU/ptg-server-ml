@@ -4,48 +4,18 @@ import asyncio
 import logging
 import ptgctl
 import ptgctl.util
-from os.path import join
-
-import nltk
-import spacy
-MODEL_DIR = os.getenv('MODEL_DIR') or 'models'
-NLTK_DIR = os.path.join(MODEL_DIR, 'nltk')
-# SPACY_DIR = os.path.join(MODEL_DIR, 'spacy')
-# spacy.util.set_data_path(SPACY_DIR)
-nltk.data.path.append(NLTK_DIR)
-
-nltk.download('punkt', download_dir=NLTK_DIR)
-# spacy.cli.download("en_core_web_lg")
-
-from tim_reasoning import StateManager
+from tim_reasoning import SessionManager
 
 logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(name)s:%(message)s')
 logger = logging.getLogger(__name__)
-#ptgctl.log.setLevel('WARNING')
-
 
 
 RECIPE_SID = 'event:recipe:id'
 SESSION_SID = 'event:session:id'
+OBJECT_STATES_SID = 'detic:image'
 UPDATE_STEP_SID = 'event:recipe:step'
-ACTIONS_CLIP_SID = 'clip:action:steps'
-ACTIONS_EGOVLP_SID = 'egovlp:action:steps'
-STEPS_OMNIMIX_SID = 'omnimix:step'
-OBJECTS_SID = 'detic:image:v2'
 REASONING_STATUS_SID = 'reasoning:check_status'
-REASONING_ENTITIES_SID = 'reasoning:entities'
 
-
-CONFIGS = {'tagger_model_path': join(os.environ['REASONING_MODELS_PATH'], 'recipe_tagger')}
-
-
-#def data_pull_connect(self, stream_id: str, ack=True, **kw):
-#    if isinstance(stream_id, (list, tuple)):
-#        stream_id = '+'.join(stream_id)
-#    if '+' in stream_id or stream_id == '*':
-#        kw.setdefault('batch', True)
-#    return self._ws('data', stream_id, 'pull?ack=True', cls=ptgctl.core.DataStream, ack=True, **kw)
-#ptgctl.API.data_pull_connect = data_pull_connect
 
 class ReasoningApp:
 
@@ -53,93 +23,50 @@ class ReasoningApp:
         self.api = ptgctl.API(username=os.getenv('API_USER') or 'reasoning',
                               password=os.getenv('API_PASS') or 'reasoning')
 
-        self.state_manager = StateManager(CONFIGS)
+        self.session_manager = SessionManager(patience=1)
 
     def start_recipe(self, recipe_id):
-        logger.info(f'Starting recipe, ID={str(recipe_id)}')
-        if recipe_id is not None:
-            recipe = self.api.recipes.get(recipe_id)
-            logger.info(f'Loaded recipe: {str(recipe)}')
-            step_data = self.state_manager.start_recipe(recipe)
-            logger.info(f'First step: {str(step_data)}')
+        pass
 
-            return step_data
-
-    async def run_reasoning(self, prefix='', top=5, use_egovlp=True):
-        actions_sid = prefix + ACTIONS_EGOVLP_SID if use_egovlp else prefix + ACTIONS_CLIP_SID
-        objects_sid = prefix + OBJECTS_SID
-        steps_sid = prefix + STEPS_OMNIMIX_SID
+    async def run_reasoning(self, prefix=''):
+        object_states_sid = prefix + OBJECT_STATES_SID
         re_check_status_sid = prefix + REASONING_STATUS_SID
-        re_entities_sid = prefix + REASONING_ENTITIES_SID
 
-        async with self.api.data_pull_connect([actions_sid, objects_sid, steps_sid, RECIPE_SID, SESSION_SID, UPDATE_STEP_SID], ack=True) as ws_pull, \
-                   self.api.data_push_connect([re_check_status_sid, re_entities_sid], batch=True) as ws_push:
+        async with self.api.data_pull_connect([object_states_sid, RECIPE_SID, SESSION_SID, UPDATE_STEP_SID], ack=True) as ws_pull, \
+                   self.api.data_push_connect([re_check_status_sid], batch=True) as ws_push:
 
-            recipe_id = self.api.session.current_recipe()
-            first_step = self.start_recipe(recipe_id)
-            if first_step is not None:
-                await ws_push.send_data([orjson.dumps(first_step)], re_check_status_sid)
-
-            entities = self.state_manager.get_entities()
-            if entities is not None:
-                logger.info(f'Sending entities for all steps: {str(entities)}')
-                await ws_push.send_data([orjson.dumps(entities)], re_entities_sid)
-
-            detected_actions = None
-            detected_objects = None
-            detected_steps = None
+            detected_object_states = None
 
             while True:
                 for sid, timestamp, data in await ws_pull.recv_data():
 
                     if sid == RECIPE_SID:  # A call to start a new recipe
-                        recipe_id = data.decode('utf-8')
-                        first_step = self.start_recipe(recipe_id)
-                        if first_step is not None:
-                            await ws_push.send_data([orjson.dumps(first_step)], re_check_status_sid)
-                        entities = self.state_manager.get_entities()
-                        if entities is not None:
-                            logger.info(f'Sending entities for all steps: {str(entities)}')
-                            await ws_push.send_data([orjson.dumps(entities)], re_entities_sid)
+                        print('New recipe')
                         continue
 
                     elif sid == UPDATE_STEP_SID:  # A call to update the step
-                        step_index = int(data)
-                        updated_step = self.state_manager.set_user_feedback(step_index)
-                        if updated_step is not None:
-                            await ws_push.send_data([orjson.dumps(updated_step)], re_check_status_sid)
+                        print('Updating step', data)
                         continue
 
                     elif sid == SESSION_SID:  # A call to start a new session
                         #self.state_manager.reset()
                         continue
 
-                    elif sid == objects_sid:  # A call sending detected objects and bounding boxes
-                        detected_objects = orjson.loads(data)
-                        #logger.info(f'Perception objects: {str(detected_objects)}')
+                    elif sid == object_states_sid:  # A call sending detected object states
+                        detected_object_states = orjson.loads(data)
+                        logger.info(f'Perception outputs: {str(detected_object_states)}')
 
-                    elif sid == actions_sid:  # A call sending detected actions
-                        detected_actions = orjson.loads(data)
-                        detected_actions = sorted(detected_actions.items(), key=lambda x: x[1], reverse=True)[:top]
-                        logger.info(f'Perception actions: {str(detected_actions)}')
+                    if detected_object_states is not None and len(detected_object_states) > 0:
+                        for entry in detected_object_states:
+                            entry['id'] = entry['segment_track_id']
+                            recipe_status = self.session_manager.handle_message(message=[entry])[0]
 
-                    elif sid == steps_sid:  # A call sending detected steps
-                        detected_steps = orjson.loads(data)
-                        detected_steps = {int(k.split('|')[0] or -1) - 1: v for k, v in detected_steps.items()}
-                        logger.info(f'Perception steps: {str(detected_steps)}')
-                    
-                    #if detected_objects is not None and detected_actions is not None and detected_steps is not None:
-                    #if detected_objects is not None and detected_steps is not None:
-                    if detected_steps is not None:
-                        recipe_status = self.state_manager.check_status(detected_actions, detected_objects, detected_steps)
-                        logger.info(f'Reasoning outputs: {str(recipe_status)}')
-                        if recipe_status is not None:
-                            recipe_status['step_id'] = int(recipe_status['step_id'])
-                            await ws_push.send_data([orjson.dumps(recipe_status)], re_check_status_sid)
-                            # Reset the values of the detected inputs
-                            detected_actions = None
-                            detected_objects = None
-                            detected_steps = None
+                            if recipe_status is not None:
+                                logger.info(f'Reasoning outputs: {str(recipe_status)}')
+                                recipe_status['step_id'] = int(recipe_status['step_id'])
+                                await ws_push.send_data([orjson.dumps(recipe_status)], re_check_status_sid)
+                                # Reset the values of the detected inputs
+                                detected_object_states = None
 
 
     @ptgctl.util.async2sync
