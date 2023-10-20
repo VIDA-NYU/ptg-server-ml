@@ -51,7 +51,9 @@ class ReasoningApp:
                         continue
 
                     elif sid == UPDATE_STEP_SID:  # A call to update the step
-                        print('Updating step', data)
+                        updated_step_task = self.session_manager.update_step_task(data)
+                        if updated_step_task is not None:
+                            await ws_push.send_data([orjson.dumps(updated_step_task)], re_check_status_sid)
                         continue
 
                     elif sid == SESSION_SID:  # A call to start a new session
@@ -94,4 +96,3 @@ class ReasoningApp:
 if __name__ == '__main__':
     import fire
     fire.Fire(ReasoningApp)
-
