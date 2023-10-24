@@ -149,7 +149,7 @@ VOCAB = {
         'jar_lid bottle_cap: jar_lid',
         'toothpicks',
         # 'floss',
-        'watch', 'glove', 'person',
+        # 'watch', 'glove', 'person',
     ],
     'equivalencies': {
         # equivalencies
@@ -192,13 +192,19 @@ class PerceptionAgent:
     def predict(self, frame, timestamp):
         t0 = time.time()
         track_detections, frame_detections, hoi_detections = self.perception.predict(frame, timestamp)
+        xmem_dets = self.perception.serialize_detections(track_detections, frame.shape, include_mask=True)
         return {
-            "detic:image": self.perception.serialize_detections(track_detections, frame.shape, include_mask=True),
-            # "detic:image": self.perception.serialize_detections(track_detections, frame.shape),
+            # "key-objects-2d"
+            # "objects-2d"
+            "detic:image": xmem_dets,
+            "detic:image:misc": (
+                self.perception.serialize_detections(frame_detections, frame.shape) + xmem_dets
+                if frame_detections is not None else None
+            ),
         }
 
 class PerceptionApp:
-    def __init__(self, vocab=VOCAB, state_db='v0', detect_every=0.5, **kw):
+    def __init__(self, vocab=VOCAB, state_db='v0', detect_every=0.3, **kw):
         self.api = ptgctl.API(username=os.getenv('API_USER') or 'perception',
                               password=os.getenv('API_PASS') or 'perception')
         self.loop = APILoop(self.api, ['main'], ['detic:image'])
@@ -224,6 +230,12 @@ class PerceptionApp:
         }
         outputs['detic:image:for3d'] = {
             'objects': outputs['detic:image'],
+            'image': image_params,
+            'epoch_timestamp': ts,
+            'timestamp': timestamp,
+        }
+        outputs['detic:image:misc:for3d'] = {
+            'objects': outputs['detic:image:misc'],
             'image': image_params,
             'epoch_timestamp': ts,
             'timestamp': timestamp,
