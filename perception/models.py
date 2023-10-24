@@ -19,7 +19,7 @@ import ray
 # audio_sf_gpu = 0.5 if dualgpu else 0.25
 
 
-@lru_cache(maxsize=1)
+@lru_cache(1)
 def get_omnivore():
     from ptgprocess.omnivore import Omnivore
     # assert torch.cuda.is_available()
@@ -27,35 +27,40 @@ def get_omnivore():
     omni_model.eval()
     return omni_model
 
-@lru_cache(maxsize=1)
+@lru_cache(1)
 def get_yolo(skill):
     from ptgprocess.yolo import BBNYolo
     yolo_model = BBNYolo(skill=skill)
     return yolo_model
 
-@lru_cache(maxsize=1)
+@lru_cache(1)
 def get_clip(device):
     import clip
     return clip.load("ViT-B/16", device=device, jit=False)
 
-@lru_cache(maxsize=1)
-def get_omnigru():
-    from ptgprocess.omnimix import OmniGRU2
-    mix_model = OmniGRU2().cuda()
+@lru_cache(1)
+def get_omnigru(skill):
+    from ptgprocess.omnimix import OmniGRU
+    mix_model = OmniGRU(skill).cuda()
     mix_model.eval()
     return mix_model
 
 @ray.remote(name='omnimix_full', num_gpus=1)
 class AllInOneModel:
-    def __init__(self, skill='M2'):
+    def __init__(self, skill=None):
         self.device = 'cuda'#torch.cuda.current_device()
         self.omni_model = get_omnivore()
         self.clip_model, self.clip_transform = get_clip(self.device)
-        self.mix_model = get_omnigru()
         skill and self.load_skill(skill)
 
     def load_skill(self, skill):
-        self.yolo_model = get_yolo(skill=skill)
+        self.mix_model = get_omnigru(skill)
+        try:
+            self.yolo_model = get_yolo(skill=skill)
+        except Exception:
+            import traceback
+            traceback.print_exc()
+            self.yolo_model = None
         # self.hidden = None
 
     @torch.no_grad()
@@ -75,45 +80,50 @@ class AllInOneModel:
         omni_input['rgb'] = z_omni[None].float()
 
         # get bounding boxes
-        outputs = self.yolo_model(im_bgr)
-        boxes = outputs[0].boxes
+        if self.yolo_model is not None:
+            outputs = self.yolo_model(im_bgr)
+            boxes = outputs[0].boxes
 
-        # get clip patches
-        if self.mix_model.use_objects:
-            X = torch.stack([
-                self.clip_transform(Image.fromarray(x)).to(self.device)
-                for x in [im_bgr] + extract_patches(im_bgr, boxes.xywh.cpu().numpy(), (224,224))
-            ])
-            z_clip = self.clip_model.encode_image(X)
+            # get clip patches
+            if self.mix_model.use_objects:
+                X = torch.stack([
+                    self.clip_transform(Image.fromarray(x)).to(self.device)
+                    for x in [im_bgr] + extract_patches(im_bgr, boxes.xywh.cpu().numpy(), (224,224))
+                ])
+                z_clip = self.clip_model.encode_image(X)
 
-            # concatenate with boxes
-            z_clip_frame = torch.cat([z_clip[:1], torch.tensor([[0, 0, 1, 1, 1]]).to(self.device)], axis=1)
-            z_clip_patch = torch.cat([z_clip[1:], boxes.xywhn, boxes.conf[:, None]], axis=1)
-            # pad boxes to size
-            z_clip_patch_pad = torch.zeros(
-                (max(self.MAX_OBJECTS - z_clip_patch.shape[0], 0), 
-                z_clip_patch.shape[1])).to(self.device)
-            z_clip_patch = torch.cat([z_clip_patch, z_clip_patch_pad])[:self.MAX_OBJECTS]
+                # concatenate with boxes
+                z_clip_frame = torch.cat([z_clip[:1], torch.tensor([[0, 0, 1, 1, 1]]).to(self.device)], axis=1)
+                z_clip_patch = torch.cat([z_clip[1:], boxes.xywhn, boxes.conf[:, None]], axis=1)
+                # pad boxes to size
+                z_clip_patch_pad = torch.zeros(
+                    (max(self.MAX_OBJECTS - z_clip_patch.shape[0], 0), 
+                    z_clip_patch.shape[1])).to(self.device)
+                z_clip_patch = torch.cat([z_clip_patch, z_clip_patch_pad])[:self.MAX_OBJECTS]
 
-            omni_input['objs'] = z_clip_patch[None,None].float()
-            omni_input['frame'] = z_clip_frame[None].float()
+                omni_input['objs'] = z_clip_patch[None,None].float()
+                omni_input['frame'] = z_clip_frame[None].float()
 
         # get mixin
         # x = z_omni[None].float(), z_clip_frame[None].float(), z_clip_patch[None,None].float()
         steps, hidden = self.mix_model(h=hidden, **omni_input)
-        steps = torch.softmax(steps[0,-1,:-2], dim=-1)
+        steps = torch.softmax(steps[0,:-2], dim=-1)
 
         # prepare objects
-        boxes = boxes.cpu()
-        objects = as_v1_objs(
-            boxes.xyxyn.numpy(), 
-            boxes.conf.numpy(), 
-            boxes.cls.numpy(), 
-            self.yolo_model.labels[boxes.cls.int().numpy()], 
-            conf_threshold=0.5)
+        objects = []
+        if self.yolo_model is not None:
+            boxes = boxes.cpu()
+            objects = as_v1_objs(
+                boxes.xyxyn.numpy(), 
+                boxes.conf.numpy(), 
+                boxes.cls.numpy(), 
+                self.yolo_model.labels[boxes.cls.int().numpy()], 
+                conf_threshold=0.5)
         return steps.cpu(), objects, hidden
     
     def forward_boxes(self, im):
+        if self.yolo_model is None:
+            return
         im_rgb = im[:,:,::-1]
         # get bounding boxes
         outputs = self.yolo_model(im_rgb)

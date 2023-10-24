@@ -14,7 +14,7 @@ DEFAULT_CHECKPOINT = os.path.join(MODEL_DIR, 'yolo_bbn.pt')
 
 MODELS = {
     "M2": "1hnX9XhVPGhXTLMQfLK7rDponHf77KH61",
-    "M5": "1PQyhoCbDNkqdm3BpwiWywAngnIrCpp26",
+    # "M5": "1PQyhoCbDNkqdm3BpwiWywAngnIrCpp26",
     "R18": "1F66I5f4J1_jTzkJc_ZTaJBXEBkxly90f",
 }
 
@@ -28,7 +28,8 @@ for k, gid in MODELS.items():
 
 SKILLS_CHECKPOINTS['tourniquet'] = SKILLS_CHECKPOINTS['M2']
 SKILLS_CHECKPOINTS['chestseal'] = SKILLS_CHECKPOINTS['R18']
-SKILLS_CHECKPOINTS['xstat'] = SKILLS_CHECKPOINTS['M5']
+# SKILLS_CHECKPOINTS['xstat'] = SKILLS_CHECKPOINTS['M5']
+# SKILLS_CHECKPOINTS['m5'] = SKILLS_CHECKPOINTS['M5'] # TODO: ugh
 
 class BBNYolo(ultralytics.YOLO):
     def __init__(self, skill='tourniquet',  **kw) -> None:

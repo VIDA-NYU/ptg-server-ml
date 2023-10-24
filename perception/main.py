@@ -187,8 +187,12 @@ class FakeModel(torch.nn.Module):
 # omnimix = models.OmnimixModel.remote()
 model = models.AllInOneModel.remote()
 
+# @functools.lru_cache(1)
+# def get_model(skill):
+#     return
+
 class StepsSession:
-    MAX_RATE_SECS = 0.5
+    MAX_RATE_SECS = 0.3
     def __init__(self, recipe_id, vocab, id_vocab, prefix=None):
         self.vocab = np.asarray(vocab)
         self.vocab_list = self.vocab.tolist()
@@ -216,6 +220,8 @@ class StepsSession:
             self.t0 = time.time()
         if self.MAX_RATE_SECS > (time.time() - self.t0):
             objects = await self.model.forward_boxes.remote(imgs[-1])
+            if not objects:
+                return
             return { self.box_sid: objects }
 
         self.t0 = time.time()

@@ -126,8 +126,8 @@ class MsgApp:
         if group == 'skill':
             if verb == 'start':
                 assert name, f"start what?"
-                if name not in self.recipe_translate:
-                    raise InvalidMessage(f"Unsupported skill {name}")
+                #if name not in self.recipe_translate:
+                #    raise InvalidMessage(f"Unsupported skill {name}")
                 name = self.recipe_translate.get(name, name)
                 self.api.session.start_recipe(name)
                 return
