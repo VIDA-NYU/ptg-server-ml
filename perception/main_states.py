@@ -178,11 +178,12 @@ VOCAB = {
 
 @ray.remote(num_gpus=1)
 class PerceptionAgent:
-    def __init__(self, vocab, state_db, detect_every):
+    def __init__(self, vocab, state_db, detect_every, conf_threshold):
         self.perception = Perception(
             vocabulary=vocab,
             state_db_fname=state_db,
             detect_every_n_seconds=detect_every,
+            conf_threshold=conf_threshold,
             # detic_device='cuda:1',
             # egohos_device='cuda:0',
             # xmem_device='cuda:1',
@@ -204,11 +205,11 @@ class PerceptionAgent:
         }
 
 class PerceptionApp:
-    def __init__(self, vocab=VOCAB, state_db='v0', detect_every=0.3, **kw):
+    def __init__(self, vocab=VOCAB, state_db='v0', detect_every=0.3, conf_threshold=0.3, **kw):
         self.api = ptgctl.API(username=os.getenv('API_USER') or 'perception',
                               password=os.getenv('API_PASS') or 'perception')
         self.loop = APILoop(self.api, ['main'], ['detic:image'])
-        self.agent = PerceptionAgent.remote(vocab, state_db, detect_every)
+        self.agent = PerceptionAgent.remote(vocab, state_db, detect_every, conf_threshold)
 
         self.loop.events.add_callback('main', self.on_image)
         self.loop.events.add_callback('task:control', self.on_control)
