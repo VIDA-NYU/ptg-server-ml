@@ -71,6 +71,7 @@ class ReasoningApp:
                     elif sid == RESET_SID:  # A call to reset the session
                         logger.info(f'Reset session')
                         self.session_manager = SessionManager(patience=1)
+                        self.pause = False
 
                     elif sid == RESET_SID:  # A call to pause/resume
                         status = data.decode('utf-8')
