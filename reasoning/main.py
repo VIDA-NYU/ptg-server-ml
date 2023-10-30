@@ -7,16 +7,16 @@ import ptgctl
 import ptgctl.util
 from tim_reasoning import SessionManager
 
-
 MODEL_DIR = os.getenv('MODEL_DIR') or 'models'
 NLTK_DIR = os.path.join(MODEL_DIR, 'nltk')
 nltk.data.path.append(NLTK_DIR)
 nltk.download('punkt', download_dir=NLTK_DIR)
 
-RECIPE_SID = 'event:recipe:id'
-SESSION_SID = 'event:session:id'
 OBJECT_STATES_SID = 'detic:image'
-UPDATE_STEP_SID = 'event:recipe:step'
+UPDATE_STEP_SID = 'arui:change_step'
+UPDATE_TASK_SID = 'arui:change_task'
+PAUSE_SID = 'arui:pause'
+RESET_SID = 'arui:reset'
 REASONING_STATUS_SID = 'reasoning:check_status'
 
 logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(name)s:%(message)s')
@@ -30,6 +30,7 @@ class ReasoningApp:
                               password=os.getenv('API_PASS') or 'reasoning')
 
         self.session_manager = SessionManager(patience=1)
+        self.pause = False
 
     def start_recipe(self, recipe_id):
         pass
@@ -38,44 +39,63 @@ class ReasoningApp:
         object_states_sid = prefix + OBJECT_STATES_SID
         re_check_status_sid = prefix + REASONING_STATUS_SID
 
-        async with self.api.data_pull_connect([object_states_sid, RECIPE_SID, SESSION_SID, UPDATE_STEP_SID], ack=True) as ws_pull, \
-                   self.api.data_push_connect([re_check_status_sid], batch=True) as ws_push:
+        async with self.api.data_pull_connect([object_states_sid, UPDATE_TASK_SID, UPDATE_STEP_SID, PAUSE_SID,
+                                               RESET_SID], ack=True) as ws_pull, \
+                self.api.data_push_connect([re_check_status_sid], batch=True) as ws_push:
 
             detected_object_states = None
 
             while True:
                 for sid, timestamp, data in await ws_pull.recv_data():
 
-                    if sid == RECIPE_SID:  # A call to start a new recipe
-                        print('New recipe')
+                    if sid == UPDATE_STEP_SID:  # A call to update the step
+                        data = data.decode('utf-8')
+                        logger.info(f'Update step: {data}')
+                        step_id, task_id = data.split('&')
+                        updated_step = self.session_manager.update_step(int(task_id), int(step_id))
+
+                        if updated_step[0] is not None:
+                            await ws_push.send_data([orjson.dumps(updated_step)], re_check_status_sid)
                         continue
 
-                    elif sid == UPDATE_STEP_SID:  # A call to update the step
-                        updated_step_task = self.session_manager.update_step_task(data)
-                        if updated_step_task is not None:
-                            await ws_push.send_data([orjson.dumps(updated_step_task)], re_check_status_sid)
+                    elif sid == UPDATE_TASK_SID:  # A call to update the task
+                        data = data.decode('utf-8')
+                        logger.info(f'Update task: {data}')
+                        task_name, task_id = data.split('&')
+                        updated_task = self.session_manager.update_task(int(task_id), task_name)
+
+                        if updated_task[0] is not None:
+                            await ws_push.send_data([orjson.dumps(updated_task)], re_check_status_sid)
                         continue
 
-                    elif sid == SESSION_SID:  # A call to start a new session
-                        #self.state_manager.reset()
-                        continue
+                    elif sid == RESET_SID:  # A call to reset the session
+                        logger.info(f'Reset session')
+                        self.session_manager = SessionManager(patience=1)
+                        self.pause = False
+
+                    elif sid == RESET_SID:  # A call to pause/resume
+                        status = data.decode('utf-8')
+                        logger.info(f'Pause/resume session: {status}')
+                        if status == 'pause':
+                            self.pause = True
+                        else:
+                            self.pause = False
 
                     elif sid == object_states_sid:  # A call sending detected object states
                         detected_object_states = orjson.loads(data)
                         logger.info(f'Perception outputs: {str(detected_object_states)}')
 
-                    if detected_object_states is not None and len(detected_object_states) > 0:
+                    if not self.pause and detected_object_states is not None and len(detected_object_states) > 0:
                         for entry in detected_object_states:
                             entry['id'] = entry['segment_track_id']
-                            recipe_status = self.session_manager.handle_message(message=[entry])[0]
+                            recipe_status = self.session_manager.handle_message(message=[entry])
 
-                            if recipe_status is not None:
+                            if recipe_status[0] is not None:
                                 logger.info(f'Reasoning outputs: {str(recipe_status)}')
-                                recipe_status['step_id'] = int(recipe_status['step_id'])
+                                # recipe_status['step_id'] = int(recipe_status['step_id'])
                                 await ws_push.send_data([orjson.dumps(recipe_status)], re_check_status_sid)
                                 # Reset the values of the detected inputs
                                 detected_object_states = None
-
 
     @ptgctl.util.async2sync
     async def run(self, *args, **kwargs):
@@ -95,4 +115,5 @@ class ReasoningApp:
 
 if __name__ == '__main__':
     import fire
+
     fire.Fire(ReasoningApp)
