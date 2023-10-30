@@ -15,6 +15,8 @@ nltk.download('punkt', download_dir=NLTK_DIR)
 OBJECT_STATES_SID = 'detic:image'
 UPDATE_STEP_SID = 'arui:change_step'
 UPDATE_TASK_SID = 'arui:change_task'
+PAUSE_SID = 'arui:pause'
+RESET_SID = 'arui:reset'
 REASONING_STATUS_SID = 'reasoning:check_status'
 
 logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(name)s:%(message)s')
@@ -28,6 +30,7 @@ class ReasoningApp:
                               password=os.getenv('API_PASS') or 'reasoning')
 
         self.session_manager = SessionManager(patience=1)
+        self.pause = False
 
     def start_recipe(self, recipe_id):
         pass
@@ -36,8 +39,8 @@ class ReasoningApp:
         object_states_sid = prefix + OBJECT_STATES_SID
         re_check_status_sid = prefix + REASONING_STATUS_SID
 
-        async with self.api.data_pull_connect([object_states_sid, RECIPE_SID, SESSION_SID, UPDATE_STEP_SID],
-                                              ack=True) as ws_pull, \
+        async with self.api.data_pull_connect([object_states_sid, UPDATE_TASK_SID, UPDATE_STEP_SID, PAUSE_SID,
+                                               RESET_SID], ack=True) as ws_pull, \
                 self.api.data_push_connect([re_check_status_sid], batch=True) as ws_push:
 
             detected_object_states = None
@@ -65,11 +68,23 @@ class ReasoningApp:
                             await ws_push.send_data([orjson.dumps(updated_task)], re_check_status_sid)
                         continue
 
+                    elif sid == RESET_SID:  # A call to reset the session
+                        logger.info(f'Reset session')
+                        self.session_manager = SessionManager(patience=1)
+
+                    elif sid == RESET_SID:  # A call to pause/resume
+                        status = data.decode('utf-8')
+                        logger.info(f'Pause/resume session: {status}')
+                        if status == 'pause':
+                            self.pause = True
+                        else:
+                            self.pause = False
+
                     elif sid == object_states_sid:  # A call sending detected object states
                         detected_object_states = orjson.loads(data)
                         logger.info(f'Perception outputs: {str(detected_object_states)}')
 
-                    if detected_object_states is not None and len(detected_object_states) > 0:
+                    if not self.pause and detected_object_states is not None and len(detected_object_states) > 0:
                         for entry in detected_object_states:
                             entry['id'] = entry['segment_track_id']
                             recipe_status = self.session_manager.handle_message(message=[entry])
