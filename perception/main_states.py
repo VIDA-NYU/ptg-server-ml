@@ -22,9 +22,7 @@ import ptgctl
 from ptgctl import holoframe
 from ptgctl.util import parse_epoch_time
 
-from object_states.inference import Perception
-
-ray.init(num_gpus=1)
+ray.init()
 
 from steps_list import RECIPE_STEP_LABELS, RECIPE_STEP_IDS
 
@@ -58,16 +56,16 @@ class APILoop:
         self.output_sids = output_sids
         self.events = APIEvents()
 
-    async def run(self):
+    async def run(self, recording_name=None, recording_dir='/src/recordings'):
         '''Run producer/consumer loop.'''
         async with ag.Graph() as g:
-            q_msg, = g.add_producer(self.reader, g.add_queue(ag.SlidingQueue))
+            q_msg, = g.add_producer(self.reader, g.add_queue(ag.SlidingQueue), recording_name=recording_name, recording_dir=recording_dir)
             q_proc = g.add_consumer(self.processor, q_msg, g.add_queue(ag.SlidingQueue))
-            g.add_consumer(self.writer, q_proc)
+            g.add_consumer(self.writer, q_proc, recording_name=recording_name, recording_dir=recording_dir)
 
-    async def reader(self, queue):
+    async def reader(self, queue, **kw):
         t0 = time.time()
-        async with self.api.data_pull_connect(self.input_sids or '*', ack=True) as ws_pull:
+        async with self.api.data_pull_connect(self.input_sids or '*', ack=True, **kw) as ws_pull:
             pbar = tqdm.tqdm()
             while True:
                 pbar.set_description('read: waiting for data...')
@@ -112,8 +110,8 @@ class APILoop:
             finally:
                 queue.task_done()
 
-    async def writer(self, queue):
-        async with self.api.data_push_connect(self.output_sids or '*', batch=True) as ws_push:
+    async def writer(self, queue, **kw):
+        async with self.api.data_push_connect(self.output_sids or '*', batch=True, write_json=True, **kw) as ws_push:
             while True:
                 preds, timestamp = await queue.get()
                 try:
@@ -134,12 +132,12 @@ VOCAB = {
         'tortilla pizza plain circular paper_plate quesadilla pancake: tortilla',
         # 'tortilla pizza plain circular paper_plate: tortilla',
         "mug coffee tea: mug",
-        "bowl soup_bowl: bowl",
-        "microwave_oven",
+        "bowl",
         "plate",
 
     ],
     'untracked': [
+        "microwave_oven",
         "tortilla plastic_bag packet ice_pack circular: tortilla_package",
         'banana',
         "banana mushroom: banana_slice",
@@ -176,18 +174,27 @@ VOCAB = {
     }
 }
 
-@ray.remote(num_gpus=1)
+@ray.remote(num_gpus=torch.cuda.device_count())
 class PerceptionAgent:
     def __init__(self, vocab, state_db, detect_every, conf_threshold):
+        from object_states.inference import Perception
+        n_gpus = torch.cuda.device_count()
+        if n_gpus == 2:
+            xmem_device = 'cuda:1'
+            detic_device = 'cuda:0'
+            egohos_device = 'cuda:0'
+            clip_device = 'cuda:1'
+        else:
+            detic_device = xmem_device = egohos_device = clip_device = 'cuda'
         self.perception = Perception(
             vocabulary=vocab,
             state_db_fname=state_db,
             detect_every_n_seconds=detect_every,
             conf_threshold=conf_threshold,
-            # detic_device='cuda:1',
-            # egohos_device='cuda:0',
-            # xmem_device='cuda:1',
-            # clip_device='cuda:1',
+            detic_device=detic_device,
+            egohos_device=egohos_device,
+            xmem_device=xmem_device,
+            clip_device=clip_device,
         )
 
     def predict(self, frame, timestamp):
@@ -205,7 +212,13 @@ class PerceptionAgent:
         }
 
 class PerceptionApp:
-    def __init__(self, vocab=VOCAB, state_db='v0', detect_every=0.3, conf_threshold=0.3, **kw):
+    def __init__(self, 
+            vocab=VOCAB, 
+            state_db='/src/app/models/v1.lancedb', 
+            # state_db='/src/app/models/lr_model_classes.pkl',
+            detect_every=0.5, 
+            conf_threshold=0.3, 
+            **kw):
         self.api = ptgctl.API(username=os.getenv('API_USER') or 'perception',
                               password=os.getenv('API_PASS') or 'perception')
         self.loop = APILoop(self.api, ['main'], ['detic:image'])
@@ -296,5 +309,9 @@ def jsondump(data):
 
 
 if __name__ == '__main__':
+    import logging
+    from tqdm.contrib.logging import logging_redirect_tqdm
     import fire
-    fire.Fire(PerceptionApp)
+    logging.basicConfig(level=logging.DEBUG)
+    with logging_redirect_tqdm():
+        fire.Fire(PerceptionApp)

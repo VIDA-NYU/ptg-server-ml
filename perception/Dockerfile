@@ -23,19 +23,27 @@ RUN pip install --no-cache-dir 'mmcls>=0.20.1'
 
 ADD perception/EgoHOS ./EgoHOS
 RUN pip install --no-cache-dir --no-deps -e ./EgoHOS
-ADD perception/Detic ./Detic
+# ADD perception/Detic ./Detic
+ADD perception/Detic/setup.py perception/Detic/README.md ./Detic/
+ADD perception/Detic/detic/__init__.py ./Detic/detic/
 RUN pip install --no-cache-dir -e ./Detic
-ADD perception/XMem ./XMem
+
+ADD perception/XMem/setup.py perception/XMem/README.md ./XMem/
+ADD perception/XMem/xmem/__init__.py ./XMem/xmem/
 RUN pip install --no-cache-dir -e ./XMem
-
-RUN pip install --no-cache-dir git+https://github.com/VIDA-NYU/ptgctl.git
-ADD perception/requirements.txt .
-RUN pip install -r requirements.txt
-RUN pip install --no-cache-dir git+https://github.com/beasteers/redis-record.git
-
 ADD perception/object-states/setup.py perception/object-states/README.md ./object-states/
 ADD perception/object-states/object_states/__init__.py ./object-states/object_states/
 RUN pip install --no-cache-dir -e ./object-states
+ADD perception/requirements.txt .
+RUN pip install -r requirements.txt
+RUN pip install --extra-index-url https://pypi.nvidia.com cuml-cu11
+
+
+# RUN pip install --no-cache-dir 
+RUN pip install --no-cache-dir redis_record==0.0.4 git+https://github.com/VIDA-NYU/ptgctl.git
+
+ADD perception/Detic ./Detic
+ADD perception/XMem ./XMem
 ADD perception/object-states ./object-states
 
 
