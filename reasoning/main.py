@@ -23,13 +23,16 @@ logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(name)s:%(message
 logger = logging.getLogger(__name__)
 
 
+PATIENCE = 3
+
+
 class ReasoningApp:
 
     def __init__(self):
         self.api = ptgctl.API(username=os.getenv('API_USER') or 'reasoning',
                               password=os.getenv('API_PASS') or 'reasoning')
 
-        self.session_manager = SessionManager(patience=1)
+        self.session_manager = SessionManager(patience=PATIENCE)
         self.pause = False
 
     async def run_reasoning(self, prefix=''):
@@ -68,7 +71,7 @@ class ReasoningApp:
 
                     elif sid == RESET_SID:  # A call to reset the session
                         logger.info(f'Reset session')
-                        self.session_manager = SessionManager(patience=1)
+                        self.session_manager = SessionManager(patience=PATIENCE)
                         self.pause = False
 
                     elif sid == RESET_SID:  # A call to pause/resume the session
