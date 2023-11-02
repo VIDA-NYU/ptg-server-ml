@@ -12,7 +12,7 @@ NLTK_DIR = os.path.join(MODEL_DIR, 'nltk')
 nltk.data.path.append(NLTK_DIR)
 nltk.download('punkt', download_dir=NLTK_DIR)
 
-OBJECT_STATES_SID = 'detic:image'
+OBJECT_STATES_SID = 'detic:memory'
 UPDATE_STEP_SID = 'arui:change_step'
 UPDATE_TASK_SID = 'arui:change_task'
 PAUSE_SID = 'arui:pause'
@@ -47,14 +47,14 @@ class ReasoningApp:
 
             while True:
                 for sid, timestamp, data in await ws_pull.recv_data():
-
                     if sid == UPDATE_STEP_SID:  # A call to update the step
                         data = data.decode('utf-8')
                         logger.info(f'Update step: {data}')
                         step_id, task_id = data.split('&')
                         updated_step = self.session_manager.update_step(int(task_id), int(step_id))
+                        logger.info(f'Updated step: {str(updated_step)}')
 
-                        if updated_step[0] is not None:
+                        if updated_step['active_tasks'][0] is not None:
                             await ws_push.send_data([orjson.dumps(updated_step)], re_check_status_sid)
                         continue
 
@@ -63,8 +63,9 @@ class ReasoningApp:
                         logger.info(f'Update task: {data}')
                         task_name, task_id = data.split('&')
                         updated_task = self.session_manager.update_task(int(task_id), task_name)
+                        logger.info(f'Updated task: {str(updated_task)}')
 
-                        if updated_task[0] is not None:
+                        if updated_task['active_tasks'][0] is not None:
                             await ws_push.send_data([orjson.dumps(updated_task)], re_check_status_sid)
                         continue
 
@@ -73,7 +74,7 @@ class ReasoningApp:
                         self.session_manager = SessionManager(patience=1)
                         self.pause = False
 
-                    elif sid == RESET_SID:  # A call to pause/resume
+                    elif sid == RESET_SID:  # A call to pause/resume the session
                         status = data.decode('utf-8')
                         logger.info(f'Pause/resume session: {status}')
                         if status == 'pause':
@@ -87,12 +88,9 @@ class ReasoningApp:
 
                     if not self.pause and detected_object_states is not None and len(detected_object_states) > 0:
                         for entry in detected_object_states:
-                            entry['id'] = entry['segment_track_id']
                             recipe_status = self.session_manager.handle_message(message=[entry])
-
-                            if recipe_status[0] is not None:
-                                logger.info(f'Reasoning outputs: {str(recipe_status)}')
-                                # recipe_status['step_id'] = int(recipe_status['step_id'])
+                            logger.info(f'Reasoning outputs: {str(recipe_status)}')
+                            if recipe_status['active_tasks'][0] is not None:
                                 await ws_push.send_data([orjson.dumps(recipe_status)], re_check_status_sid)
                                 # Reset the values of the detected inputs
                                 detected_object_states = None
