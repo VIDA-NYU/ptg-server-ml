@@ -18,6 +18,7 @@ UPDATE_TASK_SID = 'arui:change_task'
 PAUSE_SID = 'arui:pause'
 RESET_SID = 'arui:reset'
 REASONING_STATUS_SID = 'reasoning:check_status'
+REASONING_STATUS_DB_SID = 'reasoning:check_status_db'
 
 logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(name)s:%(message)s')
 logger = logging.getLogger(__name__)
@@ -41,7 +42,7 @@ class ReasoningApp:
 
         async with self.api.data_pull_connect([object_states_sid, UPDATE_TASK_SID, UPDATE_STEP_SID, PAUSE_SID,
                                                RESET_SID], ack=True) as ws_pull, \
-                self.api.data_push_connect([re_check_status_sid], batch=True) as ws_push:
+                self.api.data_push_connect([re_check_status_sid, REASONING_STATUS_DB_SID], batch=True) as ws_push:
 
             detected_object_states = None
 
@@ -88,8 +89,9 @@ class ReasoningApp:
 
                     if not self.pause and detected_object_states is not None and len(detected_object_states) > 0:
                         for entry in detected_object_states:
-                            task_status = self.session_manager.handle_message(message=[entry])
+                            task_status, dashboard = self.session_manager.handle_message(message=[entry])
                             logger.info(f'Reasoning outputs: {str(task_status)}')
+                            await ws_push.send_data([orjson.dumps(dashboard)], REASONING_STATUS_DB_SID)
                             if len(task_status['active_tasks']) > 0 and task_status['active_tasks'][0] is not None:
                                 await ws_push.send_data([orjson.dumps(task_status)], re_check_status_sid)
                                 # Reset the values of the detected inputs
