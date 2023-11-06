@@ -131,21 +131,45 @@ VOCAB = {
         # "tortilla",
         'tortilla pizza plain circular paper_plate quesadilla pancake: tortilla',
         # 'tortilla pizza plain circular paper_plate: tortilla',
-        "mug coffee tea: mug",
+        "mug cup: mug",
+        "mug cup coffee tea: mug",
         "bowl",
         "plate",
 
     ],
     'untracked': [
         "microwave_oven",
-        "tortilla plastic_bag packet ice_pack circular: tortilla_package",
+        # "tortilla plastic_bag packet ice_pack circular: tortilla_package",
+        "package",
         'banana',
         "banana mushroom: banana_slice",
         'chopping_board clipboard place_mat tray: cutting_board',
         'knife',
         'jar bottle can: jar',
         'jar_lid bottle_cap: jar_lid',
+        'honey_jar',
         'toothpicks',
+        'measuring_cup',
+        'paper_towel',
+        # 'thermometer pocketknife: thermometer',
+        'thermometer',
+        'teakettle: kettle',
+        'kettle black_kettle: kettle',
+        'teabag',
+
+        'scale kitchen_scale: scale',
+        'coffee_grinder',
+        # 'scale_(measuring_instrument) cigarette_case electronic calculator iPad: kitchen_scale',
+        'paper paper_plate cupcake-liner cupcake muffin_liner seashell: paper_filter',
+
+        # kitchen scale
+        # coffee grinder
+        # filter cone dripper (stainless steel)
+        # paper basket filter (standard 8-12 cup size)
+
+        'spoon',
+        'fork',
+
         # 'floss',
         # 'watch', 'glove', 'person',
     ],
@@ -176,7 +200,7 @@ VOCAB = {
 
 @ray.remote(num_gpus=torch.cuda.device_count())
 class PerceptionAgent:
-    def __init__(self, vocab, state_db, detect_every, conf_threshold):
+    def __init__(self, vocab, state_db, detect_every, conf_threshold, **kw):
         from object_states.inference import Perception
         n_gpus = torch.cuda.device_count()
         if n_gpus == 2:
@@ -195,6 +219,7 @@ class PerceptionAgent:
             egohos_device=egohos_device,
             xmem_device=xmem_device,
             clip_device=clip_device,
+            **kw,
         )
 
     def predict(self, frame, timestamp):
@@ -206,7 +231,9 @@ class PerceptionAgent:
             # "objects-2d"
             "detic:image": xmem_dets,
             "detic:image:misc": (
-                self.perception.serialize_detections(frame_detections, frame.shape) + xmem_dets
+                self.perception.serialize_detections(frame_detections, frame.shape) + 
+                (self.perception.serialize_detections(hoi_detections, frame.shape) or []) + 
+                xmem_dets
                 if frame_detections is not None else None
             ),
         }
@@ -214,15 +241,21 @@ class PerceptionAgent:
 class PerceptionApp:
     def __init__(self, 
             vocab=VOCAB, 
-            state_db='/src/app/models/v1.lancedb', 
+            # state_db='/src/app/models/v0.lancedb', 
+            # state_db='/src/app/models/clip_wo_bv.lancedb', 
+            #state_db='/src/app/models/sampled2k.lancedb',
+            #state_db='/src/app/models/sampled2000.lancedb',
+            state_db='/src/app/models/x2sampled2000.lancedb',
+            # state_db='/src/app/models/v1.lancedb', 
             # state_db='/src/app/models/lr_model_classes.pkl',
-            detect_every=0.5, 
+            state_key='mod_state',
+            detect_every=0.65, 
             conf_threshold=0.3, 
             **kw):
         self.api = ptgctl.API(username=os.getenv('API_USER') or 'perception',
                               password=os.getenv('API_PASS') or 'perception')
         self.loop = APILoop(self.api, ['main'], ['detic:image'])
-        self.agent = PerceptionAgent.remote(vocab, state_db, detect_every, conf_threshold)
+        self.agent = PerceptionAgent.remote(vocab, state_db, detect_every, conf_threshold, state_key=state_key, **kw)
 
         self.loop.events.add_callback('main', self.on_image)
         self.loop.events.add_callback('task:control', self.on_control)
@@ -230,9 +263,12 @@ class PerceptionApp:
     async def on_image(self, message, timestamp):
         d = holoframe_load(message)
         frame = d['image'][:,:,::-1]
-        H = 480
+        # H = 480//16*16
+        W = 480//16*16
         h, w = frame.shape[:2]
-        small_frame = cv2.resize(frame, (int(w*H/h), H))
+        # W = int(w*H/h)//16*16
+        H = int(h*W/w)//16*16
+        small_frame = cv2.resize(frame, (W, H))
         ts = parse_epoch_time(timestamp)
         outputs = await self.agent.predict.remote(small_frame, ts)
 
