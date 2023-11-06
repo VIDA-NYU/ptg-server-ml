@@ -16,6 +16,7 @@ MAINTAINER "rlopez@nyu.edu"
 WORKDIR /src/app
 
 ENV REASONING_MODELS_PATH=/src/app/models
+ENV REASONING_LOGS_PATH=/home/ptg/src/storage/logs
 
 # Install tim-reasoning and dependencies
 ADD requirements.txt .
