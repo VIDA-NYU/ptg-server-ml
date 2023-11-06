@@ -90,7 +90,7 @@ class ReasoningApp:
                         for entry in detected_object_states:
                             task_status = self.session_manager.handle_message(message=[entry])
                             logger.info(f'Reasoning outputs: {str(task_status)}')
-                            if task_status['active_tasks'][0] is not None:
+                            if len(task_status['active_tasks']) > 0 and task_status['active_tasks'][0] is not None:
                                 await ws_push.send_data([orjson.dumps(task_status)], re_check_status_sid)
                                 # Reset the values of the detected inputs
                                 detected_object_states = None
