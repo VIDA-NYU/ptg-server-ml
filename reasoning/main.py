@@ -89,7 +89,7 @@ class ReasoningApp:
 
                     if not self.pause and detected_object_states is not None and len(detected_object_states) > 0:
                         for entry in detected_object_states:
-                            task_status, dashboard = self.session_manager.handle_message(message=[entry])
+                            task_status, dashboard = self.session_manager.handle_message([entry], detected_object_states)
                             logger.info(f'Reasoning outputs: {str(task_status)}')
                             await ws_push.send_data([orjson.dumps(dashboard)], REASONING_STATUS_DB_SID)
                             if len(task_status['active_tasks']) > 0 and task_status['active_tasks'][0] is not None:
