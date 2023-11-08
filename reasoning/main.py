@@ -1,4 +1,5 @@
 import os
+import time
 import nltk
 import orjson
 import asyncio
@@ -24,11 +25,11 @@ logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(name)s:%(message
 logger = logging.getLogger(__name__)
 
 
-PATIENCE = 3
+PATIENCE = 5
 
 
 class ReasoningApp:
-
+    DISABLE_REASONING_WINDOW_SECONDS = 8
     def __init__(self):
         self.api = ptgctl.API(username=os.getenv('API_USER') or 'reasoning',
                               password=os.getenv('API_PASS') or 'reasoning')
@@ -36,19 +37,24 @@ class ReasoningApp:
         self.session_manager = SessionManager(patience=PATIENCE)
         self.pause = False
 
-    async def run_reasoning(self, prefix=''):
+    async def run_reasoning(self, prefix='', recording_name=None, recording_dir='/src/recordings'):
         object_states_sid = prefix + OBJECT_STATES_SID
         re_check_status_sid = prefix + REASONING_STATUS_SID
 
         async with self.api.data_pull_connect([object_states_sid, UPDATE_TASK_SID, UPDATE_STEP_SID, PAUSE_SID,
-                                               RESET_SID], ack=True) as ws_pull, \
-                self.api.data_push_connect([re_check_status_sid, REASONING_STATUS_DB_SID], batch=True) as ws_push:
+                                               RESET_SID], recording_name=recording_name, recording_dir=recording_dir, ack=True) as ws_pull, \
+                self.api.data_push_connect([re_check_status_sid, REASONING_STATUS_DB_SID], recording_name=recording_name, recording_dir=recording_dir, write_json=True, batch=True) as ws_push:
 
             detected_object_states = None
 
+            disable_reasoning_timestamp = 0
+
             while True:
                 for sid, timestamp, data in await ws_pull.recv_data():
+                    ts = ptgctl.util.parse_epoch_time(timestamp)
+                    print(sid, timestamp)
                     if sid == UPDATE_STEP_SID:  # A call to update the step
+                        disable_reasoning_timestamp = ts
                         data = data.decode('utf-8')
                         logger.info(f'Update step: {data}')
                         step_id, task_id = data.split('&')
@@ -89,8 +95,10 @@ class ReasoningApp:
 
                     if not self.pause and detected_object_states is not None and len(detected_object_states) > 0:
                         for entry in detected_object_states:
-                            task_status, dashboard = self.session_manager.handle_message(message=[entry])
+                            task_status, dashboard = self.session_manager.handle_message([entry], detected_object_states)
                             logger.info(f'Reasoning outputs: {str(task_status)}')
+                            if time.time() - disable_reasoning_timestamp < self.DISABLE_REASONING_WINDOW_SECONDS:
+                                continue
                             await ws_push.send_data([orjson.dumps(dashboard)], REASONING_STATUS_DB_SID)
                             if len(task_status['active_tasks']) > 0 and task_status['active_tasks'][0] is not None:
                                 await ws_push.send_data([orjson.dumps(task_status)], re_check_status_sid)

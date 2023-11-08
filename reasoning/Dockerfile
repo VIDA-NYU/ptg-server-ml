@@ -9,7 +9,7 @@ RUN apt-get update && apt-get install -y python3-opencv git && rm -rf /var/lib/a
 RUN apt-get -q update && \
    apt-get install -y build-essential pkg-config \
    && rm -rf /var/lib/apt/lists/*
-RUN pip install --no-cache-dir git+https://github.com/VIDA-NYU/ptgctl.git
+RUN pip install --no-cache-dir git+https://github.com/VIDA-NYU/ptgctl.git 'redis_record>=0.0.6'
 
 MAINTAINER "rlopez@nyu.edu"
 
@@ -24,10 +24,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Download extra resources
 ADD tim-reasoning tim-reasoning
-RUN pip install ./tim-reasoning
+RUN pip install -e ./tim-reasoning
 
 ADD main.py .
 #ADD entrypoint.sh .
-s
+
 ENTRYPOINT ["python"]
 CMD ["main.py", "run" ]
