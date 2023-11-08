@@ -37,6 +37,7 @@ RUN pip install --no-cache-dir -e ./object-states
 ADD perception/requirements.txt .
 RUN pip install -r requirements.txt
 RUN pip install --extra-index-url https://pypi.nvidia.com cuml-cu11
+RUN pip install --no-cache-dir imblearn 'scikit-learn==1.2.2'
 
 
 # RUN pip install --no-cache-dir 
