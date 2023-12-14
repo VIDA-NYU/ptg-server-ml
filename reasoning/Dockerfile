@@ -28,6 +28,6 @@ RUN pip install ./tim-reasoning
 
 ADD main.py .
 #ADD entrypoint.sh .
-s
+
 ENTRYPOINT ["python"]
 CMD ["main.py", "run" ]
