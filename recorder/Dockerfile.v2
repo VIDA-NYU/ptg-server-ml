@@ -2,19 +2,17 @@ FROM python:3.9-slim
 ARG DEBIAN_FRONTEND=noninteractive
 ENV TZ="America/New_York"
 WORKDIR /src/app
-ENV DIR=/src/app
-
 ENV PTG_URL=http://api:8000
 
 RUN apt-get -q update && \
-    apt-get install -y ffmpeg gcc python3-opencv git \
+    apt-get install -y ffmpeg python3-opencv git \
     && rm -rf /var/lib/apt/lists/*
 
 RUN pip install --no-cache-dir git+https://github.com/VIDA-NYU/ptgctl.git
-ADD setup.py README.md LICENSE $DIR/
-ADD ptgprocess/__init__.py $DIR/ptgprocess/
-RUN pip install --no-cache-dir -U -e $DIR/ptgprocess
-ADD ptgprocess/ $DIR/ptgprocess/
+ADD setup.py README.md LICENSE ptgprocess/
+ADD ptgprocess/__init__.py ptgprocess/ptgprocess/
+RUN pip install --no-cache-dir -U -e ./ptgprocess
+ADD ptgprocess/* ptgprocess/ptgprocess/
 
 ADD recorder/requirements.txt .
 RUN pip install --no-cache-dir -r recorder/requirements.txt
