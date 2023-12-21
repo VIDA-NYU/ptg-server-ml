@@ -1,10 +1,10 @@
 FROM python:3.9-slim
 ARG DEBIAN_FRONTEND=noninteractive
 ENV TZ="America/New_York"
-ENV PTG_URL=http://api:8000
-
 WORKDIR /src/app
 ENV DIR=/src/app
+
+ENV PTG_URL=http://api:8000
 
 RUN apt-get -q update && \
     apt-get install -y ffmpeg gcc python3-opencv git \
