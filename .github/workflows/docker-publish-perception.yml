@@ -14,6 +14,7 @@ on:
     tags: [ 'v*.*.*' ]
     paths:
       - perception/**
+      - .github/workflows/docker-publish-perception.yaml
   pull_request:
     branches: [ "main" ]
 
@@ -86,6 +87,7 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          platforms: linux/amd64,linux/arm64
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
