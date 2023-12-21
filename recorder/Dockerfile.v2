@@ -12,7 +12,7 @@ RUN pip install --no-cache-dir git+https://github.com/VIDA-NYU/ptgctl.git
 ADD setup.py README.md LICENSE ptgprocess/
 ADD ptgprocess/__init__.py ptgprocess/ptgprocess/
 RUN pip install --no-cache-dir -U -e ./ptgprocess
-ADD ptgprocess/* ptgprocess/ptgprocess/
+ADD ptgprocess ptgprocess/ptgprocess
 
 ADD recorder/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
