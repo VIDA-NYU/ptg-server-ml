@@ -16,6 +16,7 @@ on:
       - recorder/**
       - ptgprocess/record.py
       - ptgprocess/processors/record.py
+      - .github/workflows/docker-publish-record.yaml
   pull_request:
     branches: [ "main" ]
 
