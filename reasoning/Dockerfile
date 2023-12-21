@@ -29,5 +29,6 @@ RUN pip install ./tim-reasoning
 ADD main.py .
 #ADD entrypoint.sh .
 
+ENV PTG_URL=http://api:8000
 ENTRYPOINT ["python"]
 CMD ["main.py", "run" ]
