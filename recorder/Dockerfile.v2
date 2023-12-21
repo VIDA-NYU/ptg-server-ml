@@ -15,4 +15,4 @@ RUN pip install --no-cache-dir -U -e ./ptgprocess
 ADD ptgprocess/* ptgprocess/ptgprocess/
 
 ADD recorder/requirements.txt .
-RUN pip install --no-cache-dir -r recorder/requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
