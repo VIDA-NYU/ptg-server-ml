@@ -42,5 +42,6 @@ ADD perception/object-states ./object-states
 # ADD ptgprocess/ $DIR/ptgprocess/
 ADD perception/*.py ./
 
+ENV PTG_URL=http://api:8000
 ENTRYPOINT ["python"]
 CMD ["main_states.py", "run"]
