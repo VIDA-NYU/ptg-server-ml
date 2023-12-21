@@ -14,7 +14,7 @@ on:
     tags: [ 'v*.*.*' ]
     paths:
       - perception/**
-      - .github/workflows/docker-publish-perception.yaml
+      - .github/workflows/docker-publish-perception.yml
   pull_request:
     branches: [ "main" ]
 
