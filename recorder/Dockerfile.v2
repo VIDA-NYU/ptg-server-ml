@@ -16,5 +16,5 @@ ADD ptgprocess/__init__.py $DIR/ptgprocess/
 RUN pip install --no-cache-dir -U -e '/src/lib/ptgprocess'
 ADD ptgprocess/ $DIR/ptgprocess/
 
-ADD requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+ADD recorder/requirements.txt .
+RUN pip install --no-cache-dir -r recorder/requirements.txt
