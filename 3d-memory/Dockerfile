@@ -24,5 +24,7 @@ RUN pip install --no-cache-dir orjson opencv-python 'torch<2' torchvision
 # add app code
 ADD 3d-memory/*.py ./
 ADD main.py .
+
+ENV PTG_URL=http://api:8000
 ENTRYPOINT ["python"]
 CMD ["main.py", "run"]
