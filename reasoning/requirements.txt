@@ -1,3 +1,4 @@
 # tim-reasoning @ git+https://github.com/VIDA-NYU/tim-reasoning.git@devel
 orjson
 gdown
+pandas
