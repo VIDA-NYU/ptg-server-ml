@@ -20,6 +20,7 @@ git+https://github.com/openai/CLIP.git
 orjson
 tqdm
 
-ray
+#ray
+ray[default]
 
 lancedb
