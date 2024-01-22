@@ -231,13 +231,13 @@ class PerceptionApp:
         }
         outputs['detic:image:for3d'] = {
             'objects': outputs['detic:image'],
-            'image': image_params,
+            'image_params': image_params,
             'epoch_timestamp': ts,
             'timestamp': timestamp,
         }
         outputs['detic:image:misc:for3d'] = {
             'objects': outputs['detic:image:misc'],
-            'image': image_params,
+            'image_params': image_params,
             'epoch_timestamp': ts,
             'timestamp': timestamp,
         }
