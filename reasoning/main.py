@@ -101,12 +101,7 @@ class ReasoningApp:
     async def run(self, *args, **kwargs):
         while True:
             try:
-                recipe = self.api.session.current_recipe()
-                if recipe:
-                    await self.run_reasoning(*args, **kwargs)
-                else:
-                    print(recipe)
-                    await asyncio.sleep(1)
+                await self.run_reasoning(*args, **kwargs)
             except Exception:
                 import traceback
                 traceback.print_exc()
