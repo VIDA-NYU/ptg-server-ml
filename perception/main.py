@@ -66,6 +66,8 @@ class Perception:
 
     def start_session(self, recipe_id, prefix=None):
         '''Initialize the action session for a recipe.'''
+        if isinstance(recipe_id, bytes):
+            recipe_id = recipe_id.decode()
         if not recipe_id:
             raise RecipeExit("no recipe set.")
         # recipe = self.api.recipes.get(recipe_id) or {}
@@ -74,7 +76,7 @@ class Perception:
         # if not vocab:
         #     raise Exception(f"\nRecipe {recipe_id}.{self.vocab_key} returned no steps in {set(recipe)}.")
         if recipe_id not in RECIPE_STEP_LABELS:
-            raise RecipeExit(f"{recipe_id} not supported by this model.")
+            raise RecipeExit(f"{recipe_id} not supported by this model. Only {set(RECIPE_STEP_LABELS)}")
         vocab = RECIPE_STEP_LABELS[recipe_id]
         id_vocab = RECIPE_STEP_IDS[recipe_id]
         self.session = StepsSession(recipe_id, vocab, id_vocab, prefix=prefix)

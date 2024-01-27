@@ -230,7 +230,7 @@ RECIPES = {
         "11|cut frosting bag corner", 
         "12|apply frosting to plate", 
     ],
-    'tourniquet': [
+    'm2': [
         "1|place tourniquet above wound",
         "2|pull tourniquet tight",
         "3|apply strap",
@@ -241,12 +241,43 @@ RECIPES = {
         "8|mark time on strap with marker",
     ],
     'm5': [
-        "5|apply manual pressure",
-        "4|push plunger to deploy sponges",
-        "3|insert plunger into applicator",
-        "2|insert applicator into wound",
         "1|open packaging and remove applicator",
-    ]
+        "2|insert applicator into wound",
+        "3|insert plunger into applicator",
+        "4|push plunger to deploy sponges",
+        "5|apply manual pressure",
+    ],
+    'm1': [
+        '1|sweep left leg',
+        '2|sweep right leg',
+        '3|sweep chest',
+        '4|sweep left arm',
+        '5|sweep right arm',
+        '6|sense breathing',
+        '7|rake chest',
+        '8|roll over casualty',
+        '9|rake the back and buttocks',
+        '10|check pulse',
+        '11|check skin temperature/quality',
+        '12|determine position to leave casualty',
+    ],
+    'm3': [
+    '1|direct hand pressure',
+    '2|open packaging',
+    '3|apply dressing to wound',
+    '4|wrap dressing around',
+    '5|secure dressing',
+    '6|apply hand pressure',
+    ],
+    'r18': [
+        '1|identify gunshot wound',
+        '2|cover and seal wound',
+        '3|open chest seal package',
+        '4|wipe blood and body fluids from wound site',
+        '5|peel away chest seal backer',
+        '6|place chest seal with circle of vents over wound site and seal to chest',
+        '7|look for exit wound if found repeat process',
+    ],
 }
 
 common_labels = np.array(["|OTHER"])

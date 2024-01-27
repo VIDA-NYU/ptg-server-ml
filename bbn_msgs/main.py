@@ -105,7 +105,7 @@ class MsgApp:
 
     name_translate = {'-': None, '?': None, '.': None}
     cmd_translate = {'stopped': 'stop', 'started': 'start', 'done': 'stop'}
-    recipe_translate = {'m2': 'tourniquet'} # FIXME: !! this should be stored in the DB
+    recipe_translate = {} # FIXME: !! this should be stored in the DB
     def handle_control_message(self, msg):
         match = re.search(r'(\w+) (\w+) (\w+)', msg.lower())
         group, name, verb = 'experiment', None, msg
@@ -153,11 +153,11 @@ class MsgApp:
         while True:
             try:
                 recipe_id = self.api.session.current_recipe()
-                while not recipe_id:
-                    print("waiting for recipe to be activated")
-                    recipe_id = await self._watch_recipe_id(recipe_id)
+                #while not recipe_id:
+                #    print("waiting for recipe to be activated")
+                #    recipe_id = await self._watch_recipe_id(recipe_id)
                 
-                print("Starting recipe:", recipe_id)
+                #print("Starting recipe:", recipe_id)
                 await self.run_recipe(recipe_id, *a, **kw)
             except RecipeExit as e:
                 print(e)
@@ -178,16 +178,23 @@ class MsgApp:
     def start_session(self, skill_id, prefix=None):
         '''Initialize the action session for a recipe.'''
         if not skill_id:
-            raise RecipeExit("no skill set.")
+            self.session = None
+            return
+            #raise RecipeExit("no skill set.")
+        if isinstance(skill_id, bytes):
+            skill_id = skill_id.decode()
         skill = self.api.recipes.get(skill_id) or {}
         skill_id = skill.get('skill_id')
         if not skill_id:
             raise RecipeExit("skill has no skill_id key.")
         self.session = MsgSession(skill_id)
 
-    async def run_recipe(self, recipe_id, address=os.getenv("ZMQ_ADDRESS"), prefix=None):
+    async def run_recipe(self, recipe_id=None, address=os.getenv("ZMQ_ADDRESS"), prefix=None):
         '''Run the recipe.'''
-        self.start_session(recipe_id, prefix=prefix)
+        if recipe_id is None:
+            recipe_id = self.api.session.current_recipe()
+        if recipe_id:
+            self.start_session(recipe_id, prefix=prefix)
 
         # stream ids
         reasoning_sid = f'{prefix or ""}reasoning:check_status'
@@ -204,7 +211,8 @@ class MsgApp:
                         pbar.update()
                         # watch recipe changes
                         if sid == recipe_sid or sid == vocab_sid:
-                            print("recipe changed", recipe_id, '->', d, flush=True)
+                            old_recipe_id, recipe_id = recipe_id, d.decode()
+                            print("recipe changed", old_recipe_id, '->', recipe_id, flush=True)
                             self.start_session(recipe_id, prefix=prefix)
                             continue
                         if self.session is None:

@@ -14,6 +14,7 @@ services:
       ZMQ_ADDRESS: ${BBN_MSG_URL:-tcp://localhost:5555}
       #PTG_URL: $PTG_URL
       #ZMQ_ADDRESS: tcp://bbn_msgs_test:5555
+      #ZMQ_ADDRESS: tcp://localhost:5555
       PYTHONUNBUFFERED: "1"
     restart: unless-stopped
 
@@ -30,35 +31,36 @@ services:
       #ZMQ_ADDRESS: tcp://bbn_ctl_test:5555
       PTG_URL: http://localhost:7890 #$PTG_URL
       ZMQ_ADDRESS: ${BBN_CTL_URL:-tcp://localhost:5555}
+      #ZMQ_ADDRESS: tcp://localhost:5555
       PYTHONUNBUFFERED: "1"
     restart: unless-stopped
 
-  # test containers
-  bbn_msgs_test:
-    image: bbn_msgs
-    build:
-      context: .
-      dockerfile: bbn_msgs/Dockerfile
-    expose: ["5555"]
-    container_name: bbn_msgs_test
-    command: test_steps.py
-    environment:
-      PTG_URL: $PTG_URL
-      PYTHONUNBUFFERED: "1"
-    restart: unless-stopped
+      # # test containers
+      # bbn_msgs_test:
+      #   image: bbn_msgs
+      #   build:
+      #     context: .
+      #     dockerfile: bbn_msgs/Dockerfile
+      #   expose: ["5555"]
+      #   container_name: bbn_msgs_test
+      #   command: test_steps.py
+      #   environment:
+      #     PTG_URL: $PTG_URL
+      #     PYTHONUNBUFFERED: "1"
+      #   restart: unless-stopped
 
-  # bbn_ctl_test:
-  #   image: bbn_msgs
-  #   build:
-  #     context: .
-  #     dockerfile: bbn_msgs/Dockerfile
-  #   expose: ["5555"]
-  #   container_name: bbn_ctl_test
-  #   command: test_ctl.py
-  #   environment:
-  #     PTG_URL: $PTG_URL
-  #     PYTHONUNBUFFERED: "1"
-  #   restart: unless-stopped
+      # bbn_ctl_test:
+      #   image: bbn_msgs
+      #   build:
+      #     context: .
+      #     dockerfile: bbn_msgs/Dockerfile
+      #   expose: ["5555"]
+      #   container_name: bbn_ctl_test
+      #   command: test_ctl.py
+      #   environment:
+      #     PTG_URL: $PTG_URL
+      #     PYTHONUNBUFFERED: "1"
+      #   restart: unless-stopped
 
 # connect these containers to the server containers
 networks:

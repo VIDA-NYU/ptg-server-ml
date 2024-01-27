@@ -37,6 +37,7 @@ CFG_FILES = glob.glob(os.path.join(mod_path, 'config/*.yaml'))
 for f in CFG_FILES:
     cfg = yaml.safe_load(open(f))
     for skill in cfg['MODEL']['SKILLS']:
+        print(skill, f)
         CHECKPOINTS[skill] = (cfg['MODEL']['DRIVE_ID'], f)
 print(CHECKPOINTS)
 
@@ -120,9 +121,9 @@ class OmniGRU(nn.Module):
         self.hidden_dim = hidden_dim
         self.n_layers = n_layers
 
-        self.rgb_fc = nn.Linear(rgb_size, int(input_dim/2))
+        self.action_fc = nn.Linear(rgb_size, int(input_dim/2))
         if self.use_bn: 
-            self.rgb_bn = nn.BatchNorm1d(int(input_dim/2))
+            self.action_bn = nn.BatchNorm1d(int(input_dim/2))
 
         if self.use_audio:
             self.audio_fc = nn.Linear(audio_size, int(input_dim/2))
@@ -138,15 +139,19 @@ class OmniGRU(nn.Module):
         self.fc = nn.Linear(hidden_dim, output_dim+2)
         self.relu = nn.ReLU()
 
-        self.load_state_dict(torch.load(checkpoint))
+        weights = torch.load(checkpoint)
+        if "rgb_fc.weight" in weights:
+            weights["action_fc.weight"] = weights.pop("rgb_fc.weight")
+            weights["action_fc.bias"] = weights.pop("rgb_fc.bias")
+        self.load_state_dict(weights)
 
     def forward(self, rgb, h=None, aud=None, objs=None, frame=None):
         x = rgb
 
         if self.use_audio or self.use_objects:
-            rgb = self.rgb_fc(rgb)
+            rgb = self.action_fc(rgb)
             if self.use_bn:
-                rgb = self.rgb_bn(rgb.transpose(1, 2)).transpose(1, 2)
+                rgb = self.action_bn(rgb.transpose(1, 2)).transpose(1, 2)
             rgb = self.relu(rgb)
 
         if self.use_audio:

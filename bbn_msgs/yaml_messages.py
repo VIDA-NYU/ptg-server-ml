@@ -35,7 +35,7 @@ class Message(dict):
 
     def _initialize_skill(self, skill):
         # Get the skill steps we need
-        steps = _get_skill_steps(skill)
+        steps = _get_skill_steps(skill.upper())
         # Get current actions (holds steps)
         user_current_actions = self['users current actions right now']
         # Set current skill field

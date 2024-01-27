@@ -15,7 +15,7 @@ torchvision
 torchaudio
 pandas
 
-ultralytics
+ultralytics==8.0.239
 git+https://github.com/openai/CLIP.git
 orjson
 tqdm

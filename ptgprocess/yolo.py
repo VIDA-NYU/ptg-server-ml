@@ -6,7 +6,7 @@ from torch import nn
 
 import gdown
 import logging
-from ultralytics.yolo.utils import LOGGER as _UL_LOGGER
+from ultralytics.utils import LOGGER as _UL_LOGGER
 _UL_LOGGER.setLevel(logging.WARNING)
 
 MODEL_DIR = os.getenv('MODEL_DIR') or 'models'
@@ -14,7 +14,7 @@ DEFAULT_CHECKPOINT = os.path.join(MODEL_DIR, 'yolo_bbn.pt')
 
 MODELS = {
     "M2": "1hnX9XhVPGhXTLMQfLK7rDponHf77KH61",
-    # "M5": "1PQyhoCbDNkqdm3BpwiWywAngnIrCpp26",
+    "M5": "1PQyhoCbDNkqdm3BpwiWywAngnIrCpp26",
     "R18": "1F66I5f4J1_jTzkJc_ZTaJBXEBkxly90f",
 }
 
@@ -22,18 +22,29 @@ SKILLS_CHECKPOINTS = {
     k: os.path.join(MODEL_DIR, f'bbn_yolo_{k}.pt') 
     for k in MODELS 
 }
+#/src/app/models/M2_M3_M5_R18_v9_2.pt
+fname = os.path.join(MODEL_DIR, 'M2_M3_M5_R18_v9_2.pt')
+SKILLS_CHECKPOINTS['M1'] = fname
+SKILLS_CHECKPOINTS['M2'] = fname
+SKILLS_CHECKPOINTS['M3'] = fname
+SKILLS_CHECKPOINTS['M5'] = fname
+SKILLS_CHECKPOINTS['R18'] = fname
+
 for k, gid in MODELS.items():
     if not os.path.isfile(SKILLS_CHECKPOINTS[k]):
         gdown.download(id=gid, output=SKILLS_CHECKPOINTS[k])
 
 SKILLS_CHECKPOINTS['tourniquet'] = SKILLS_CHECKPOINTS['M2']
 SKILLS_CHECKPOINTS['chestseal'] = SKILLS_CHECKPOINTS['R18']
-# SKILLS_CHECKPOINTS['xstat'] = SKILLS_CHECKPOINTS['M5']
-# SKILLS_CHECKPOINTS['m5'] = SKILLS_CHECKPOINTS['M5'] # TODO: ugh
+SKILLS_CHECKPOINTS['xstat'] = SKILLS_CHECKPOINTS['M5']
+SKILLS_CHECKPOINTS['m5'] = SKILLS_CHECKPOINTS['M5'] # TODO: ugh
+for k in list(SKILLS_CHECKPOINTS):
+    SKILLS_CHECKPOINTS[k.lower()] = SKILLS_CHECKPOINTS[k]
 
 class BBNYolo(ultralytics.YOLO):
     def __init__(self, skill='tourniquet',  **kw) -> None:
         checkpoint = SKILLS_CHECKPOINTS[skill]
+        print(skill, checkpoint)
         super().__init__(checkpoint, **kw)
         names: dict = self.names
         self.labels = np.array([str(names.get(i, i)) for i in range(len(names))])

@@ -55,7 +55,20 @@ def listen_for_response(n:int, socket: zmq.Socket) -> None:
             return # received message
     raise MissingResponse(f"No response within {n} seconds")
 
-def run_server(address="tcp://*:5555"):
+
+def try_send(socket, *msgs):
+    for msg in msgs:
+        try:
+            print("sending", msg, '...')
+            socket.send_string(msg)
+            listen_for_response(5,socket)  # perhaps we should change to use poller??
+            print("sent", msg)
+        except Exception as e:
+            print(type(e).__name__, e)
+            return
+
+
+def run_server(address="tcp://*:5555", interactive=False):
     print(f"Attempting to connect to [{address}]")
     context = zmq.Context()
     socket = context.socket(zmq.DEALER)
@@ -66,39 +79,21 @@ def run_server(address="tcp://*:5555"):
     message = socket.recv()  # wait for client
     print("initialized:", message)
 
+    if interactive:
+        from IPython import embed
+        embed()
+        return
+
     print("Testing experiment messages...")
     for v_m in valid_messages:
-        try:
-            print("sending", v_m, '...')
-            socket.send_string(v_m)
-            listen_for_response(5,socket)  # perhaps we should change to use poller??
-            print("sent", v_m)
-            time.sleep(1)
-        except Exception as e:
-            print(type(e).__name__, e)
+        try_send(socket, v_m)
+        time.sleep(1)
     
     for skill in skills:
-        try:
-            print("sending", skill, 'started...')
-            socket.send_string(f"skill {skill} started")
-            listen_for_response(5,socket)
-            print("sending", skill, 'done...')
-            socket.send_string(f"skill {skill} done")
-            listen_for_response(5,socket)
-            print("sent", skill)
-            time.sleep(1)
-        except Exception as e:
-            print(type(e).__name__, e)
+        try_send(socket, f"skill {skill} started", f"skill {skill} done")
+        time.sleep(1)
 
-    try:
-        print("Sending fake skill started...")
-        socket.send_string(f"skill fake_skill started")
-        listen_for_response(5,socket)
-        print("Sending fake skill done...")
-        socket.send_string(f"skill fake_skill done")
-        listen_for_response(5,socket)
-    except Exception as e:
-        print(type(e).__name__, e)
+    try_send(socket, f"skill fake_skill started", f"skill fake_skill done")
 
     print("done :)")
 
