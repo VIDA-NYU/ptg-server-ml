@@ -20,8 +20,11 @@ RUN pip install --no-cache-dir -U -e '/src/lib/ptgprocess'
 ADD perception/requirements.txt .
 RUN pip install -r requirements.txt
 
+ADD perception/procedural_step_recog procedural_step_recog
+RUN ls -lah && pip install -e ./procedural_step_recog
+
 ADD ptgprocess/ $DIR/ptgprocess/
 ADD perception/*.py ./
 
 #ENTRYPOINT ["bash"]
-CMD ["main.py", "run"]
+CMD ["main2.py", "run"]
