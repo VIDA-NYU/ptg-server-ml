@@ -64,6 +64,7 @@ services:
     volumes:
       - /dev/shm:/dev/shm
       - ${VOLUMES}/models:/src/app/models
+      - ${VOLUMES}/models/perception_2024/current:/home/user/models
       - ${VOLUMES}/models/cache:/root/.cache
       - ${VOLUMES}/models/torch_iocache:/root/.torch/iopath_cache
     restart: unless-stopped
@@ -72,10 +73,11 @@ services:
         reservations:
           devices:
             - driver: nvidia
-              count: 1
+              count: 2
               capabilities: [gpu]
     devices:
      - /dev/nvidia0:/dev/nvidia0
+     - /dev/nvidia1:/dev/nvidia1
 
   # detic:
   #   image: detic
@@ -148,19 +150,19 @@ services:
   #   devices:
   #    - /dev/nvidia0:/dev/nvidia0
   
-  reasoning:
-    build: ./reasoning
-    container_name: reasoning
-    restart: unless-stopped
-    #command: -c 'import time;time.sleep(600)'
-    environment:
-      PTG_URL: $PTG_URL
-    volumes:
-      - ${VOLUMES}/models/reasoning:/src/app/models
-      - ${VOLUMES}/models/reasoning/nltk:/usr/share/nltk_data
-      - ${VOLUMES}/models/reasoning/spacy:/opt/conda/lib/python3.8/site-packages/en_core_web_lg
-    devices:
-     - /dev/nvidia0:/dev/nvidia0
+  # reasoning:
+  #   build: ./reasoning
+  #   container_name: reasoning
+  #   restart: unless-stopped
+  #   #command: -c 'import time;time.sleep(600)'
+  #   environment:
+  #     PTG_URL: $PTG_URL
+  #   volumes:
+  #     - ${VOLUMES}/models/reasoning:/src/app/models
+  #     - ${VOLUMES}/models/reasoning/nltk:/usr/share/nltk_data
+  #     - ${VOLUMES}/models/reasoning/spacy:/opt/conda/lib/python3.8/site-packages/en_core_web_lg
+  #   devices:
+  #    - /dev/nvidia0:/dev/nvidia0
 
   # memory:
   #   build: ./memory
@@ -169,42 +171,42 @@ services:
   #   environment:
   #     PTG_URL: $PTG_URL
 
-  in3d:
-    build: ./in3d
-    container_name: in3d
-    restart: unless-stopped
-    environment:
-      PTG_URL: $PTG_URL
+  # in3d:
+  #   build: ./in3d
+  #   container_name: in3d
+  #   restart: unless-stopped
+  #   environment:
+  #     PTG_URL: $PTG_URL
 
 
-  3d-memory:
-    build: ./3d-memory
-    container_name: 3d-memory
-    command: main.py mem run
-    restart: unless-stopped
-    volumes:
-      - ${VOLUMES}/models:/src/app/hand_object_detector/models
-    environment:
-      PTG_URL: $PTG_URL
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
-    devices:
-     - /dev/nvidia1:/dev/nvidia1
+  # 3d-memory:
+  #   build: ./3d-memory
+  #   container_name: 3d-memory
+  #   command: main.py mem run
+  #   restart: unless-stopped
+  #   volumes:
+  #     - ${VOLUMES}/models:/src/app/hand_object_detector/models
+  #   environment:
+  #     PTG_URL: $PTG_URL
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             count: 1
+  #             capabilities: [gpu]
+  #   devices:
+  #    - /dev/nvidia1:/dev/nvidia1
 
-  3d-memory-sync:
-    build: ./3d-memory
-    container_name: 3d-memory-sync
-    command: main.py sync run
-    restart: unless-stopped
-    volumes:
-      - ${VOLUMES}/models:/src/app/hand_object_detector/models
-    environment:
-      PTG_URL: $PTG_URL
+  # 3d-memory-sync:
+  #   build: ./3d-memory
+  #   container_name: 3d-memory-sync
+  #   command: main.py sync run
+  #   restart: unless-stopped
+  #   volumes:
+  #     - ${VOLUMES}/models:/src/app/hand_object_detector/models
+  #   environment:
+  #     PTG_URL: $PTG_URL
 
 # connect these containers to the server containers
 networks:

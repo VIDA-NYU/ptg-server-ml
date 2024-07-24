@@ -45,8 +45,11 @@ class ReasoningApp:
 
     def start_recipe(self, recipe_id):
         logger.info(f'Starting recipe, ID={str(recipe_id)}')
-        if recipe_id is not None:
+        if recipe_id:
             recipe = self.api.recipes.get(recipe_id)
+            if isinstance(recipe, list):
+                logger.error(f"Invalid recipe {type(recipe_id)} {recipe_id}")
+                return 
             logger.info(f'Loaded recipe: {str(recipe)}')
             step_data = self.state_manager.start_recipe(recipe)
             logger.info(f'First step: {str(step_data)}')

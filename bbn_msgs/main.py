@@ -31,7 +31,7 @@ class MsgSession:
             return
         self.message.update_steps_state(data['all_steps'])
         #self.message.update_step(data['step_id'])
-        self.message.update_errors(data['error_description'] if data['error_status'] else False)
+        self.message.update_errors(data['error_description'] if data.get('error_status') else False)
         return str(self.message)
 
 
@@ -70,6 +70,7 @@ class InvalidMessage(Exception):
 
 class MsgApp:
     ORG_NAME = 'nyu'
+    session = None
     def __init__(self, **kw):
         self.api = ptgctl.API(username=os.getenv('API_USER') or 'bbn_msgs',
                               password=os.getenv('API_PASS') or 'bbn_msgs')
@@ -189,7 +190,7 @@ class MsgApp:
             raise RecipeExit("skill has no skill_id key.")
         self.session = MsgSession(skill_id)
 
-    async def run_recipe(self, recipe_id=None, address=os.getenv("ZMQ_ADDRESS"), prefix=None):
+    async def run_recipe(self, recipe_id=None, address=os.getenv("ZMQ_ADDRESS"), prefix=None, str_prefix=os.getenv("STREAM_PREFIX")):
         '''Run the recipe.'''
         if recipe_id is None:
             recipe_id = self.api.session.current_recipe()
@@ -198,11 +199,12 @@ class MsgApp:
 
         # stream ids
         reasoning_sid = f'{prefix or ""}reasoning:check_status'
+        steps_sid = f'{str_prefix or prefix or ""}omnimix:steps:sm'
         recipe_sid = f'{prefix or ""}event:recipe:id'
         vocab_sid = f'{prefix or ""}event:recipes'
 
         pbar = tqdm.tqdm()
-        async with self.api.data_pull_connect([reasoning_sid, recipe_sid, vocab_sid], ack=True) as ws_pull, ZMQClient(address) as zq:
+        async with self.api.data_pull_connect([steps_sid, recipe_sid, vocab_sid], ack=True) as ws_pull, ZMQClient(address) as zq:
             with logging_redirect_tqdm():
                 while True:
                     pbar.set_description('waiting for data...')
@@ -220,7 +222,9 @@ class MsgApp:
 
                         # predict actions
                         preds = None
-                        if sid == reasoning_sid:
+                        #if sid == reasoning_sid:
+                        #    preds = self.session.on_reasoning_step(orjson.loads(d))
+                        if sid == steps_sid:
                             preds = self.session.on_reasoning_step(orjson.loads(d))
                         if preds:
                             await zq.send(preds)

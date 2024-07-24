@@ -1,65 +1,89 @@
-step_states: ['unobserved', 'implied', 'done']
-
 skills:
-  M2: 
-    desc: Apply Tourniquet
+  A8:
+    desc: A8 - Nasopharyngeal Airway (NPA)
     steps:
-     - Place tourniquet with over  effected extremity 2-3 inches above wound site.
-     - Pull tourniquet tight.
-     - Cinch tourniquet strap.
-     - Apply strap to strap body.
-     - Turn windless clock wise or counter clockwise until hemorrhage is controlled.
-     - Lock windless into the windless keeper.
-     - Pull remaining strap over the windless keeper.
-     - Secure strap and windless keeper with keeper securing device.
-     - Mark time on securing device strap with permanent marker.
-
+    - 1. Select NPA tube that best fits casualty.
+    - 2. Place casualty into 'sniffing position' with head tilted back and nostrils exposed.
+    - 3. Cover NPA with lube.
+    - 4. Insert NPA perpendicular to casualty nostril until flange meets tip of nose, rotating along the way.
+    - 5. Look, listen, and feel for airway compliance.
   M1:
-    desc: trauma assessment
+    desc: M1 - Trauma Assessment
     steps:
-     - Optionally unclothe depending on situation.
-     - Sweep* left leg.
-     - Sweep* right leg.
-     - Sweep* chest.
-     - Sweep* left arm.
-     - Sweep* right arm.
-     - Look Listen Feel Breathing.
-     - Rake** chest."
-     - Roll over casualty.
-     - Rake the back and buttocks.
-     - Check pulse.
-     - Check skin temperature / quality.
-     - Determine position to leave casualty.
-     - Optionally reclothe depending on situation.
-
-  R18:
-    desc: Apply chest seal
+    - 1. Optionally unclothe depending on situation.
+    - 2. Sweep* left leg.
+    - 3. Sweep* right leg.
+    - 4. Sweep* left arm.
+    - 5. Sweep* right arm.
+    - 6. Look Listen Feel Breathing.
+    - 7. Rake** chest.
+    - 8. Roll over casualty.
+    - 9. Rake the back and buttocks.
+    - 10. Check pulse.
+    - 11. Check skin temperature/quality.
+    - 12. Expose and look at chest.
+    - 13. Optionally reclothe depending on situation.
+  M2:
+    desc: M2 - Apply Tourniquet
     steps:
-     - Identify gunshot wound or penetrating trauma to chest.
-     - With gloved hand, cover and seal wound site.
-     - Open vented chest seal package.
-     - Wipe blood and body fluids from wound site.
-     - Peel away chest seal backer.
-     - Place chest seal with circle of vents over wound site and seal to chest.
-     - Look for exit wound, if found repeat process.
-
-  M5:
-    desc: X-Stat 12
-    steps:
-     - Open inner packaging and remove applicator.
-     - Insert applicator into wound track as close to bleeding source as possible.
-     - Insert plunger into applicator.
-     - Push plunger firmly to deploy sponges into wound.
-     - Completely fill wound track with sponges.
-     - Cover wound site with pressure dressing.
-     - Apply manual pressure if necessary.
-
+    - 1. Place tourniquet over affected extremity 2-3 inches above wound site.
+    - 2. Pull tourniquet tight.
+    - 3. Apply strap to strap body.
+    - 4. Turn windless clock wise or counter clockwise until hemorrhage is controlled.
+    - 5. Lock windless into the windless keeper.
+    - 6. Pull remaining strap over the windless keeper.
+    - 7. Secure strap and windless keeper with keeper securing device.
+    - 8. Mark time on securing device strap with permanent marker.
   M3:
-    desc: Apply pressure dressing
+    desc: M3 - Apply pressure dressing
     steps:
-     - Apply direct hand pressure.
-     - Open dressing packaging.
-     - Apply dressing with pressure point directly over wound site.
-     - Wrap dressing around effected area extremity or trunk with 80 precent elastic stretch.
-     - Secure dressing with securing device.
-     - Apply direct hand pressure for 5 minutes.
+    - 1. Apply direct hand pressure.
+    - 2. Open dressing packaging.
+    - 3. Apply dressing with pressure point directly over wound site.
+    - 4. Wrap dressing around affected area extremity or trunk with 80 percent elastic
+      stretch.
+    - 5. Secure dressing with securing device.
+  M4:
+    desc: M4 - Wound Packing
+    steps:
+    - 1. Apply direct hand pressure.
+    - 2. Open dressing packaging.
+    - 3. Pack wound.
+  M5:
+    desc: M5 - X-Stat
+    steps:
+    - 1. Open inner packaging and remove applicator.
+    - 2. Insert applicator into wound track as close to bleeding source as possible.
+    - 3. Insert plunger into applicator.
+    - 4. Push plunger firmly to deploy sponges into wound.
+    - 5. Apply manual pressure if necessary.
+  R16:
+    desc: R16 - Ventilate with Bag-Valve-Mask (BVM)
+    steps:
+    - 1. Place casualty into 'sniffing position' with head tilted back and nostrils exposed.
+    - 2. Open the BVM packaging.
+    - 3. Attach mask to BVM and expand BVM to full size.
+    - "4. Place mask over patient\u2019s mouth in proper orientation."
+    - "5. Squeeze BVM while holding mask to patient\u2019s mouth."
+  R18:
+    desc: R18 - Apply chest seal
+    steps:
+    - 1. Cover and seal wound site with hands (apply pressure).
+    - 2. Open vented chest seal package.
+    - 3. Wipe blood and body fluids from wound site.
+    - 4. Peel away chest seal backer.
+    - 5. Place chest seal with circle of vents over wound site and seal to chest.
+  R19:
+    desc: R19 - Needle Chest Decompression
+    steps:
+    - 1. Locate insertion site at the second intercostal space at the midclavicular
+      line.
+    - 2. Wipe the insertion site with an alcohol wipe.
+    - 3. Prepare catheter and needle.
+    - 4. Insert needle into insertion site and leave for 5-10 seconds.
+    - 5. Remove needle, keeping catheter inside the patient.
+    - 6. Apply tape around catheter to secure it in place.
+step_states:
+- unobserved
+- implied
+- done
