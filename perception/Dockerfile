@@ -20,7 +20,8 @@ RUN pip install --no-cache-dir -U -e '/src/lib/ptgprocess'
 ADD perception/requirements.txt .
 RUN pip install -r requirements.txt
 RUN pip install ipdb
-ADD perception/procedural_step_recog procedural_step_recog
+ADD perception/procedural_step_recog_ff procedural_step_recog
+#ADD perception/procedural_step_recog procedural_step_recog
 #ADD perception/procedural_step_recog_irr procedural_step_recog
 
 RUN ls -lah && pip install -e ./procedural_step_recog

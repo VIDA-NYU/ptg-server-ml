@@ -65,6 +65,7 @@ services:
       - /dev/shm:/dev/shm
       - ${VOLUMES}/models:/src/app/models
       - ${VOLUMES}/models/perception_2024/current:/home/user/models
+      - ./perception/procedural_step_recog_ff/config:/home/user/data/config
       - ${VOLUMES}/models/cache:/root/.cache
       - ${VOLUMES}/models/torch_iocache:/root/.torch/iopath_cache
     restart: unless-stopped

@@ -192,6 +192,7 @@ class MsgApp:
 
     async def run_recipe(self, recipe_id=None, address=os.getenv("ZMQ_ADDRESS"), prefix=None, str_prefix=os.getenv("STREAM_PREFIX")):
         '''Run the recipe.'''
+        print("ADDRESS:", address)
         if recipe_id is None:
             recipe_id = self.api.session.current_recipe()
         if recipe_id:

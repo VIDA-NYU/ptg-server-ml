@@ -27,7 +27,7 @@ services:
     network_mode: host
     environment:
       PTG_URL: http://localhost:7890 #$PTG_URL
-      ZMQ_ADDRESS: ${BBN_MSG_URL:-tcp://localhost:5556}
+      ZMQ_ADDRESS: ${BBN_MSG_URL2:-tcp://localhost:5556}
       STREAM_PREFIX: "model2"
       PYTHONUNBUFFERED: "1"
     restart: unless-stopped
